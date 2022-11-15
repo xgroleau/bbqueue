@@ -20,10 +20,10 @@
 //! ## Local usage
 //!
 //! ```rust, no_run
-//! # use bbqueue::BBBuffer;
+//! # use bbqueue::BBQueue;
 //! #
 //! // Create a buffer with six elements
-//! let bb: BBBuffer<6> = BBBuffer::new();
+//! let bb: BBQueueStatic<6> = BBQueueStatic::new_static();
 //! let (mut prod, mut cons) = bb.try_split().unwrap();
 //!
 //! // Request space for one byte
@@ -49,10 +49,10 @@
 //! ## Static usage
 //!
 //! ```rust, no_run
-//! # use bbqueue::BBBuffer;
+//! # use bbqueue::BBQueue;
 //! #
 //! // Create a buffer with six elements
-//! static BB: BBBuffer<6> = BBBuffer::new();
+//! static BB: BBQueueStatic<6> = BBQueueStatic::new_static();
 //!
 //! fn main() {
 //!     // Split the bbqueue into producer and consumer halves.
@@ -101,6 +101,9 @@
 
 mod bbbuffer;
 pub use bbbuffer::*;
+
+mod buffer_provider;
+pub use buffer_provider::*;
 
 pub mod framed;
 mod vusize;

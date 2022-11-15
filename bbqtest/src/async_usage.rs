@@ -1,12 +1,12 @@
 #[cfg(test)]
 mod tests {
-    use bbqueue::BBBuffer;
+    use bbqueue::BBQueueStatic;
     use bbqueue::Error;
     use futures::{executor::block_on, future::join};
 
     #[test]
     fn test_read() {
-        let bb: BBBuffer<6> = BBBuffer::new();
+        let bb: BBQueueStatic<6> = BBQueueStatic::new_static();
         let (mut prod, mut cons) = bb.try_split().unwrap();
 
         {
@@ -30,7 +30,7 @@ mod tests {
 
     #[test]
     fn test_write() {
-        let bb: BBBuffer<6> = BBBuffer::new();
+        let bb: BBQueueStatic<6> = BBQueueStatic::new_static();
         let (mut prod, mut cons) = bb.try_split().unwrap();
 
         let mut w_grant = block_on(prod.grant_exact_async(4)).unwrap();
@@ -52,7 +52,7 @@ mod tests {
 
     #[test]
     fn test_read_after_write() {
-        let bb: BBBuffer<6> = BBBuffer::new();
+        let bb: BBQueueStatic<6> = BBQueueStatic::new_static();
         let (mut prod, mut cons) = bb.try_split().unwrap();
 
         let read_fut = async {
@@ -85,7 +85,7 @@ mod tests {
 
     #[test]
     fn grant_exact_too_big() {
-        let bb: BBBuffer<6> = BBBuffer::new();
+        let bb: BBQueueStatic<6> = BBQueueStatic::new_static();
         let (mut prod, mut _cons) = bb.try_split().unwrap();
         let w_grant_res = block_on(async { prod.grant_exact_async(8).await });
 
@@ -94,7 +94,7 @@ mod tests {
 
     #[test]
     fn grant_exact_loop() {
-        let bb: BBBuffer<6> = BBBuffer::new();
+        let bb: BBQueueStatic<6> = BBQueueStatic::new_static();
         let (mut prod, mut cons) = bb.try_split().unwrap();
         let w_grant = prod.grant_exact(4).unwrap();
         w_grant.commit(4);
@@ -125,7 +125,7 @@ mod tests {
 
     #[test]
     fn grant_exact_loop_too_big() {
-        let bb: BBBuffer<6> = BBBuffer::new();
+        let bb: BBQueueStatic<6> = BBQueueStatic::new_static();
         let (mut prod, mut cons) = bb.try_split().unwrap();
         let w_grant = prod.grant_exact(4).unwrap();
         w_grant.commit(4);
@@ -145,7 +145,7 @@ mod tests {
 
     #[test]
     fn write_cancelled() {
-        let bb: BBBuffer<6> = BBBuffer::new();
+        let bb: BBQueueStatic<6> = BBQueueStatic::new_static();
         let (mut prod, mut cons) = bb.try_split().unwrap();
         let w_grant_fut = prod.grant_exact_async(6);
         drop(w_grant_fut);
@@ -155,7 +155,7 @@ mod tests {
 
     #[test]
     fn read_cancelled() {
-        let bb: BBBuffer<6> = BBBuffer::new();
+        let bb: BBQueueStatic<6> = BBQueueStatic::new_static();
         let (mut prod, mut cons) = bb.try_split().unwrap();
         let w_grant = prod.grant_exact(6).unwrap();
         w_grant.commit(6);
