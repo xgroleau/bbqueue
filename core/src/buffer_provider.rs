@@ -5,9 +5,6 @@ pub trait BufferProvider: PartialEq {
     /// Returns a reference to the provided buffer
     /// The buffer **HAS NO GARANTEE** on it's state or initialization
     fn buf(&mut self) -> &mut [u8];
-
-    /// Returns the capacity of the buffer
-    fn capacity(&self) -> usize;
 }
 
 /// A statically allocated buffer
@@ -27,10 +24,6 @@ impl<const N: usize> BufferProvider for StaticBufferProvider<N> {
     fn buf(&mut self) -> &mut [u8] {
         &mut self.buf
     }
-
-    fn capacity(&self) -> usize {
-        self.buf.len()
-    }
 }
 
 /// A buffer allocated from userspace
@@ -49,9 +42,5 @@ impl<'a> SliceBufferProvider<'a> {
 impl BufferProvider for SliceBufferProvider<'_> {
     fn buf(&mut self) -> &mut [u8] {
         &mut self.buf
-    }
-
-    fn capacity(&self) -> usize {
-        self.buf.len()
     }
 }

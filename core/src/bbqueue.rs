@@ -265,9 +265,9 @@ where
     ///    let (prod, cons) = buf.try_split().unwrap();
     /// }
     /// ```
-    pub fn new(buf: B) -> Self {
+    pub fn new(mut buf: B) -> Self {
         Self {
-            capacity: buf.capacity(),
+            capacity: buf.buf().len(),
 
             // This will not be initialized until we split the buffer
             buf: UnsafeCell::new(buf),
