@@ -11,9 +11,9 @@
 //! ```rust
 //! # // bbqueue test shim!
 //! # fn bbqtest() {
-//! use bbqueue::BBQueueStatic;
+//! use bbqueue::{BBQueue, StaticBufferProvider};
 //!
-//! let bb: BBQueueStatic<1000> = BBQueue::new_static();
+//! let bb: BBQueue<StaticBufferProvider<1000>> = BBQueue::new_static();
 //! let (mut prod, mut cons) = bb.try_split_framed().unwrap();
 //!
 //! // One frame in, one frame out

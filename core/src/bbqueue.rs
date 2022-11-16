@@ -1,7 +1,7 @@
 use crate::{
     framed::{FrameConsumer, FrameProducer},
     waker::WakerStorage,
-    BufferProvider, Error, Result, StaticBP,
+    BufferProvider, Error, Result, SliceBufferProvider, StaticBufferProvider,
 };
 use core::{
     cell::UnsafeCell,
@@ -20,9 +20,6 @@ use core::{
     },
     task::{Context, Poll},
 };
-
-/// Type alias for BBQueue using a static buffer provider
-pub type BBQueueStatic<const N: usize> = BBQueue<StaticBP<N>>;
 
 #[derive(Debug)]
 /// A backing structure for a BBQueue. Can be used to create either
@@ -95,10 +92,10 @@ where
     /// ```rust
     /// # // bbqueue test shim!
     /// # fn bbqtest() {
-    /// use bbqueue::BBQueue;
+    /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
     /// // Create and split a new buffer
-    /// let buffer: BBQueueStatic<6> = BBQueueStatic::new_static();
+    /// let buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
     /// let (prod, cons) = buffer.try_split().unwrap();
     ///
     /// // Not possible to split twice
@@ -168,10 +165,10 @@ where
     /// ```rust
     /// # // bbqueue test shim!
     /// # fn bbqtest() {
-    /// use bbqueue::BBQueue;
+    /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
     /// // Create and split a new buffer
-    /// let buffer: BBQueueStatic<6> = BBQueueStatic::new_static();
+    /// let buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
     /// let (prod, cons) = buffer.try_split().unwrap();
     ///
     /// // Not possible to split twice
@@ -256,20 +253,16 @@ impl<B> BBQueue<B>
 where
     B: BufferProvider,
 {
-    /// Create a new constant inner portion of a `BBQueue`.
-    ///
-    /// NOTE: This is only necessary to use when creating a `BBQueue` at static
-    /// scope, and is generally never used directly. This process is necessary to
-    /// work around current limitations in `const fn`, and will be replaced in
-    /// the future.
+    /// Create a new BBQueue with abstraction over the memory provider
     ///
     /// ```rust,no_run
-    /// use bbqueue::BBQueue;
+    /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
-    /// static BUF: BBQueueStatic<6> = BBQueueStatic::new_static();
     ///
     /// fn main() {
-    ///    let (prod, cons) = BUF.try_split().unwrap();
+    ///    let provider = StaticBufferProvider::<6>::new();
+    ///    let buf = BBQueue::new(provider);
+    ///    let (prod, cons) = buf.try_split().unwrap();
     /// }
     /// ```
     pub fn new(buf: B) -> Self {
@@ -319,18 +312,12 @@ where
     }
 }
 
-impl<'a, const N: usize> BBQueue<StaticBP<N>> {
-    /// Create a new constant inner portion of a `BBQueue`.
-    ///
-    /// NOTE: This is only necessary to use when creating a `BBQueue` at static
-    /// scope, and is generally never used directly. This process is necessary to
-    /// work around current limitations in `const fn`, and will be replaced in
-    /// the future.
-    ///
+impl<const N: usize> BBQueue<StaticBufferProvider<N>> {
+    /// Create a new constant static BBQ, using staic memory allocation
     /// ```rust,no_run
-    /// use bbqueue::BBQueue;
+    /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
-    /// static BUF: BBQueueStatic<6> = BBQueueStatic::new_static();
+    /// static BUF: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
     ///
     /// fn main() {
     ///    let (prod, cons) = BUF.try_split().unwrap();
@@ -341,7 +328,7 @@ impl<'a, const N: usize> BBQueue<StaticBP<N>> {
             capacity: N,
 
             // This will not be initialized until we split the buffer
-            buf: UnsafeCell::new(StaticBP::new()),
+            buf: UnsafeCell::new(StaticBufferProvider::new()),
 
             /// Owned by the writer
             write: AtomicUsize::new(0),
@@ -380,6 +367,22 @@ impl<'a, const N: usize> BBQueue<StaticBP<N>> {
             /// Shared between reader and writer
             write_waker: WakerStorage::new(),
         }
+    }
+}
+
+impl<'a> BBQueue<SliceBufferProvider<'a>> {
+    /// Create a new BBQueue using userspace provided memory in the form of a slice.
+    /// ```rust,no_run
+    /// use bbqueue::{BBQueue, StaticBufferProvider};
+    ///
+    /// fn main() {
+    ///    let mut bb_memory = [0; 6];
+    ///    let buf = BBQueue::new_from_slice(&mut bb_memory);
+    ///    let (prod, cons) = buf.try_split().unwrap();
+    /// }
+    /// ```
+    pub fn new_from_slice(buf: &'a mut [u8]) -> Self {
+        Self::new(SliceBufferProvider::new(buf))
     }
 }
 
@@ -432,10 +435,10 @@ where
     /// ```rust
     /// # // bbqueue test shim!
     /// # fn bbqtest() {
-    /// use bbqueue::BBQueue;
+    /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
     /// // Create and split a new buffer of 6 elements
-    /// let buffer: BBQueueStatic<6> = BBQueueStatic::new_static();
+    /// let buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
     /// let (mut prod, cons) = buffer.try_split().unwrap();
     ///
     /// // Successfully obtain and commit a grant of four bytes
@@ -524,10 +527,10 @@ where
     /// ```
     /// # // bbqueue test shim!
     /// # fn bbqtest() {
-    /// use bbqueue::BBQueue;
+    /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
     /// // Create and split a new buffer of 6 elements
-    /// let buffer: BBQueueStatic<6> = BBQueueStatic::new_static();
+    /// let buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
     /// let (mut prod, mut cons) = buffer.try_split().unwrap();
     ///
     /// // Successfully obtain and commit a grant of four bytes
@@ -666,10 +669,10 @@ where
     /// ```rust
     /// # // bbqueue test shim!
     /// # fn bbqtest() {
-    /// use bbqueue::BBQueue;
+    /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
     /// // Create and split a new buffer of 6 elements
-    /// let buffer: BBQueueStatic<6> = BBQueueStatic::new_static();
+    /// let buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
     /// let (mut prod, mut cons) = buffer.try_split().unwrap();
     ///
     /// // Successfully obtain and commit a grant of four bytes
@@ -819,10 +822,10 @@ where
     /// ```rust
     /// # // bbqueue test shim!
     /// # fn bbqtest() {
-    /// use bbqueue::BBQueue;
+    /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
     /// // Create a new buffer of 6 elements
-    /// let buffer: BBQueueStatic<6> = BBQueueStatic::new_static();
+    /// let buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
     /// assert_eq!(buffer.capacity(), 6);
     /// # // bbqueue test shim!
     /// # }
@@ -923,10 +926,10 @@ where
     /// ```rust
     /// # // bbqueue test shim!
     /// # fn bbqtest() {
-    /// use bbqueue::BBQueue;
+    /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
     /// // Create and split a new buffer of 6 elements
-    /// let buffer: BBQueueStatic<6> = BBQueueStatic::new_static();
+    /// let buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
     /// let (mut prod, mut cons) = buffer.try_split().unwrap();
     ///
     /// // Successfully obtain and commit a grant of four bytes
@@ -1055,10 +1058,10 @@ where
     /// ```
     /// # // bbqueue test shim!
     /// # fn bbqtest() {
-    /// use bbqueue::BBQueue;
+    /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
     /// // Create and split a new buffer of 6 elements
-    /// let buffer: BBQueueStatic<6> = BBQueueStatic::new_static();
+    /// let buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
     /// let (mut prod, mut cons) = buffer.try_split().unwrap();
     ///
     /// // Successfully obtain and commit a grant of four bytes
@@ -1158,10 +1161,10 @@ where
     /// ```
     /// # // bbqueue test shim!
     /// # fn bbqtest() {
-    /// use bbqueue::BBQueue;
+    /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
     /// // Create and split a new buffer of 6 elements
-    /// let buffer: BBQueueStatic<6> = BBQueueStatic::new_static();
+    /// let buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
     /// let (mut prod, mut cons) = buffer.try_split().unwrap();
     ///
     /// // Successfully obtain and commit a grant of four bytes
