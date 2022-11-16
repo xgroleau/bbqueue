@@ -21,7 +21,7 @@ block of contiguous memory, which can be filled (or emptied) by a DMA engine.
 
 ## Local usage
 
-```rust, no_run
+```rust
 # use bbqueue::{BBQueue, StaticBufferProvider};
 #
 // Create a buffer with six elements
@@ -50,7 +50,7 @@ rgr.release(1);
 
 ## Static usage
 
-```rust, no_run
+```rust
 # use bbqueue::{BBQueue, StaticBufferProvider};
 #
 // Create a ststic buffer with six elements
@@ -88,7 +88,7 @@ fn main() {
 
 ## User provided memory usage
 
-```rust, no_run
+```rust
 # use bbqueue::{BBQueue};
 #
 
