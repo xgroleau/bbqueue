@@ -1,14 +1,14 @@
 use crate::{
     framed::{FrameConsumer, FrameProducer},
     waker::WakerStorage,
-    Error, Result,
+    BufferProvider, Error, Result, SliceBufferProvider, StaticBufferProvider,
 };
 use core::{
     cell::UnsafeCell,
     cmp::min,
     future::Future,
     marker::PhantomData,
-    mem::{forget, transmute, MaybeUninit},
+    mem::{forget, transmute},
     ops::{Deref, DerefMut},
     pin::Pin,
     ptr::NonNull,
@@ -24,8 +24,15 @@ use core::{
 #[derive(Debug)]
 /// A backing structure for a BBQueue. Can be used to create either
 /// a BBQueue or a split Producer/Consumer pair
-pub struct BBBuffer<const N: usize> {
-    buf: UnsafeCell<MaybeUninit<[u8; N]>>,
+pub struct BBQueue<B>
+where
+    B: BufferProvider,
+{
+    /// The buffer provider
+    buf: UnsafeCell<B>,
+
+    /// Max capacity of the buffer
+    capacity: usize,
 
     /// Where the next byte will be written
     write: AtomicUsize,
@@ -64,10 +71,13 @@ pub struct BBBuffer<const N: usize> {
     write_waker: WakerStorage,
 }
 
-unsafe impl<const A: usize> Sync for BBBuffer<A> {}
+unsafe impl<B> Sync for BBQueue<B> where B: BufferProvider {}
 
-impl<'a, const N: usize> BBBuffer<N> {
-    /// Attempt to split the `BBBuffer` into `Consumer` and `Producer` halves to gain access to the
+impl<'a, B> BBQueue<B>
+where
+    B: BufferProvider,
+{
+    /// Attempt to split the `BBQueue` into `Consumer` and `Producer` halves to gain access to the
     /// buffer. If buffer has already been split, an error will be returned.
     ///
     /// NOTE: When splitting, the underlying buffer will be explicitly initialized
@@ -82,10 +92,10 @@ impl<'a, const N: usize> BBBuffer<N> {
     /// ```rust
     /// # // bbqueue test shim!
     /// # fn bbqtest() {
-    /// use bbqueue::BBBuffer;
+    /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
     /// // Create and split a new buffer
-    /// let buffer: BBBuffer<6> = BBBuffer::new();
+    /// let buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
     /// let (prod, cons) = buffer.try_split().unwrap();
     ///
     /// // Not possible to split twice
@@ -98,7 +108,7 @@ impl<'a, const N: usize> BBBuffer<N> {
     /// # bbqtest();
     /// # }
     /// ```
-    pub fn try_split(&'a self) -> Result<(Producer<'a, N>, Consumer<'a, N>)> {
+    pub fn try_split(&'a self) -> Result<(Producer<'a, B>, Consumer<'a, B>)> {
         if atomic::swap(&self.already_split, true, AcqRel) {
             return Err(Error::AlreadySplit);
         }
@@ -107,7 +117,8 @@ impl<'a, const N: usize> BBBuffer<N> {
             // Explicitly zero the data to avoid undefined behavior.
             // This is required, because we hand out references to the buffers,
             // which mean that creating them as references is technically UB for now
-            let mu_ptr = self.buf.get();
+            let buf = &mut *self.buf.get();
+            let mu_ptr = buf.buf();
             (*mu_ptr).as_mut_ptr().write_bytes(0u8, 1);
 
             let nn1 = NonNull::new_unchecked(self as *const _ as *mut _);
@@ -126,7 +137,7 @@ impl<'a, const N: usize> BBBuffer<N> {
         }
     }
 
-    /// Attempt to split the `BBBuffer` into `FrameConsumer` and `FrameProducer` halves
+    /// Attempt to split the `BBQueue` into `FrameConsumer` and `FrameProducer` halves
     /// to gain access to the buffer. If buffer has already been split, an error
     /// will be returned.
     ///
@@ -138,7 +149,7 @@ impl<'a, const N: usize> BBBuffer<N> {
     ///
     /// NOTE:  If the `thumbv6` feature is selected, this function takes a short critical
     /// section while splitting.
-    pub fn try_split_framed(&'a self) -> Result<(FrameProducer<'a, N>, FrameConsumer<'a, N>)> {
+    pub fn try_split_framed(&'a self) -> Result<(FrameProducer<'a, B>, FrameConsumer<'a, B>)> {
         let (producer, consumer) = self.try_split()?;
         Ok((FrameProducer { producer }, FrameConsumer { consumer }))
     }
@@ -148,16 +159,16 @@ impl<'a, const N: usize> BBBuffer<N> {
     /// This re-initializes the buffer so it may be split in a different mode at a later
     /// time. There must be no read or write grants active, or an error will be returned.
     ///
-    /// The `Producer` and `Consumer` must be from THIS `BBBuffer`, or an error will
+    /// The `Producer` and `Consumer` must be from THIS `BBQueue`, or an error will
     /// be returned.
     ///
     /// ```rust
     /// # // bbqueue test shim!
     /// # fn bbqtest() {
-    /// use bbqueue::BBBuffer;
+    /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
     /// // Create and split a new buffer
-    /// let buffer: BBBuffer<6> = BBBuffer::new();
+    /// let buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
     /// let (prod, cons) = buffer.try_split().unwrap();
     ///
     /// // Not possible to split twice
@@ -178,9 +189,9 @@ impl<'a, const N: usize> BBBuffer<N> {
     /// ```
     pub fn try_release(
         &'a self,
-        prod: Producer<'a, N>,
-        cons: Consumer<'a, N>,
-    ) -> CoreResult<(), (Producer<'a, N>, Consumer<'a, N>)> {
+        prod: Producer<'a, B>,
+        cons: Consumer<'a, B>,
+    ) -> CoreResult<(), (Producer<'a, B>, Consumer<'a, B>)> {
         // Note: Re-entrancy is not possible because we require ownership
         // of the producer and consumer, which are not cloneable. We also
         // can assume the buffer has been split, because
@@ -223,13 +234,13 @@ impl<'a, const N: usize> BBBuffer<N> {
     /// This re-initializes the buffer so it may be split in a different mode at a later
     /// time. There must be no read or write grants active, or an error will be returned.
     ///
-    /// The `FrameProducer` and `FrameConsumer` must be from THIS `BBBuffer`, or an error
+    /// The `FrameProducer` and `FrameConsumer` must be from THIS `BBQueue`, or an error
     /// will be returned.
     pub fn try_release_framed(
         &'a self,
-        prod: FrameProducer<'a, N>,
-        cons: FrameConsumer<'a, N>,
-    ) -> CoreResult<(), (FrameProducer<'a, N>, FrameConsumer<'a, N>)> {
+        prod: FrameProducer<'a, B>,
+        cons: FrameConsumer<'a, B>,
+    ) -> CoreResult<(), (FrameProducer<'a, B>, FrameConsumer<'a, B>)> {
         self.try_release(prod.producer, cons.consumer)
             .map_err(|(producer, consumer)| {
                 // Restore the wrapper types
@@ -238,27 +249,28 @@ impl<'a, const N: usize> BBBuffer<N> {
     }
 }
 
-impl<const A: usize> BBBuffer<A> {
-    /// Create a new constant inner portion of a `BBBuffer`.
-    ///
-    /// NOTE: This is only necessary to use when creating a `BBBuffer` at static
-    /// scope, and is generally never used directly. This process is necessary to
-    /// work around current limitations in `const fn`, and will be replaced in
-    /// the future.
+impl<B> BBQueue<B>
+where
+    B: BufferProvider,
+{
+    /// Create a new BBQueue with abstraction over the memory provider
     ///
     /// ```rust,no_run
-    /// use bbqueue::BBBuffer;
+    /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
-    /// static BUF: BBBuffer<6> = BBBuffer::new();
     ///
     /// fn main() {
-    ///    let (prod, cons) = BUF.try_split().unwrap();
+    ///    let provider = StaticBufferProvider::<6>::new();
+    ///    let buf = BBQueue::new(provider);
+    ///    let (prod, cons) = buf.try_split().unwrap();
     /// }
     /// ```
-    pub const fn new() -> Self {
+    pub fn new(buf: B) -> Self {
         Self {
+            capacity: buf.capacity(),
+
             // This will not be initialized until we split the buffer
-            buf: UnsafeCell::new(MaybeUninit::uninit()),
+            buf: UnsafeCell::new(buf),
 
             /// Owned by the writer
             write: AtomicUsize::new(0),
@@ -300,7 +312,81 @@ impl<const A: usize> BBBuffer<A> {
     }
 }
 
-/// `Producer` is the primary interface for pushing data into a `BBBuffer`.
+impl<const N: usize> BBQueue<StaticBufferProvider<N>> {
+    /// Create a new constant static BBQ, using staic memory allocation
+    /// ```rust,no_run
+    /// use bbqueue::{BBQueue, StaticBufferProvider};
+    ///
+    /// static BUF: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+    ///
+    /// fn main() {
+    ///    let (prod, cons) = BUF.try_split().unwrap();
+    /// }
+    /// ```
+    pub const fn new_static() -> Self {
+        Self {
+            capacity: N,
+
+            // This will not be initialized until we split the buffer
+            buf: UnsafeCell::new(StaticBufferProvider::new()),
+
+            /// Owned by the writer
+            write: AtomicUsize::new(0),
+
+            /// Owned by the reader
+            read: AtomicUsize::new(0),
+
+            /// Cooperatively owned
+            ///
+            /// NOTE: This should generally be initialized as size_of::<self.buf>(), however
+            /// this would prevent the structure from being entirely zero-initialized,
+            /// and can cause the .data section to be much larger than necessary. By
+            /// forcing the `last` pointer to be zero initially, we place the structure
+            /// in an "inverted" condition, which will be resolved on the first commited
+            /// bytes that are written to the structure.
+            ///
+            /// When read == last == write, no bytes will be allowed to be read (good), but
+            /// write grants can be given out (also good).
+            last: AtomicUsize::new(0),
+
+            /// Owned by the Writer, "private"
+            reserve: AtomicUsize::new(0),
+
+            /// Owned by the Reader, "private"
+            read_in_progress: AtomicBool::new(false),
+
+            /// Owned by the Writer, "private"
+            write_in_progress: AtomicBool::new(false),
+
+            /// We haven't split at the start
+            already_split: AtomicBool::new(false),
+
+            /// Shared between reader and writer.
+            read_waker: WakerStorage::new(),
+
+            /// Shared between reader and writer
+            write_waker: WakerStorage::new(),
+        }
+    }
+}
+
+impl<'a> BBQueue<SliceBufferProvider<'a>> {
+    /// Create a new BBQueue using userspace provided memory in the form of a slice.
+    /// ```rust,no_run
+    /// use bbqueue::{BBQueue, StaticBufferProvider};
+    ///
+    /// fn main() {
+    ///    let mut bb_memory = [0; 6];
+    ///    let buf = BBQueue::new_from_slice(&mut bb_memory);
+    ///    let (prod, cons) = buf.try_split().unwrap();
+    /// }
+    /// ```
+    pub fn new_from_slice(buf: &'a mut [u8]) -> Self {
+        Self::new(SliceBufferProvider::new(buf))
+    }
+}
+
+/// `Producer` is the primary interface for pushing data into a `BBQueue`.
 /// There are various methods for obtaining a grant to write to the buffer, with
 /// different potential tradeoffs. As all grants are required to be a contiguous
 /// range of data, different strategies are sometimes useful when making the decision
@@ -324,14 +410,20 @@ impl<const A: usize> BBBuffer<A> {
 ///
 /// See [this github issue](https://github.com/jamesmunns/bbqueue/issues/38) for a
 /// discussion of grant methods that could be added in the future.
-pub struct Producer<'a, const N: usize> {
-    bbq: NonNull<BBBuffer<N>>,
+pub struct Producer<'a, B>
+where
+    B: BufferProvider,
+{
+    bbq: NonNull<BBQueue<B>>,
     pd: PhantomData<&'a ()>,
 }
 
-unsafe impl<'a, const N: usize> Send for Producer<'a, N> {}
+unsafe impl<'a, B> Send for Producer<'a, B> where B: BufferProvider {}
 
-impl<'a, const N: usize> Producer<'a, N> {
+impl<'a, B> Producer<'a, B>
+where
+    B: BufferProvider,
+{
     /// Request a writable, contiguous section of memory of exactly
     /// `sz` bytes. If the buffer size requested is not available,
     /// an error will be returned.
@@ -343,10 +435,10 @@ impl<'a, const N: usize> Producer<'a, N> {
     /// ```rust
     /// # // bbqueue test shim!
     /// # fn bbqtest() {
-    /// use bbqueue::BBBuffer;
+    /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
     /// // Create and split a new buffer of 6 elements
-    /// let buffer: BBBuffer<6> = BBBuffer::new();
+    /// let buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
     /// let (mut prod, cons) = buffer.try_split().unwrap();
     ///
     /// // Successfully obtain and commit a grant of four bytes
@@ -364,7 +456,7 @@ impl<'a, const N: usize> Producer<'a, N> {
     /// # bbqtest();
     /// # }
     /// ```
-    pub fn grant_exact(&mut self, sz: usize) -> Result<GrantW<'a, N>> {
+    pub fn grant_exact(&mut self, sz: usize) -> Result<GrantW<'a, B>> {
         let inner = unsafe { &self.bbq.as_ref() };
 
         if atomic::swap(&inner.write_in_progress, true, AcqRel) {
@@ -375,7 +467,7 @@ impl<'a, const N: usize> Producer<'a, N> {
         // be careful writing to `load`
         let write = inner.write.load(Acquire);
         let read = inner.read.load(Acquire);
-        let max = N;
+        let max = unsafe { self.bbq.as_ref().capacity() };
         let already_inverted = write < read;
 
         let start = if already_inverted {
@@ -434,10 +526,10 @@ impl<'a, const N: usize> Producer<'a, N> {
     /// ```
     /// # // bbqueue test shim!
     /// # fn bbqtest() {
-    /// use bbqueue::BBBuffer;
+    /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
     /// // Create and split a new buffer of 6 elements
-    /// let buffer: BBBuffer<6> = BBBuffer::new();
+    /// let buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
     /// let (mut prod, mut cons) = buffer.try_split().unwrap();
     ///
     /// // Successfully obtain and commit a grant of four bytes
@@ -462,7 +554,7 @@ impl<'a, const N: usize> Producer<'a, N> {
     /// # bbqtest();
     /// # }
     /// ```
-    pub fn grant_max_remaining(&mut self, mut sz: usize) -> Result<GrantW<'a, N>> {
+    pub fn grant_max_remaining(&mut self, mut sz: usize) -> Result<GrantW<'a, B>> {
         let inner = unsafe { &self.bbq.as_ref() };
 
         if atomic::swap(&inner.write_in_progress, true, AcqRel) {
@@ -473,7 +565,7 @@ impl<'a, const N: usize> Producer<'a, N> {
         // be careful writing to `load`
         let write = inner.write.load(Acquire);
         let read = inner.read.load(Acquire);
-        let max = N;
+        let max = unsafe { self.bbq.as_ref().capacity() };
 
         let already_inverted = write < read;
 
@@ -538,7 +630,7 @@ impl<'a, const N: usize> Producer<'a, N> {
     ///              Write pointer
     /// We cannot request a size of size 7, since we would loop over the read pointer
     /// even if the buffer is empty. In this case, an error is returned
-    pub fn grant_exact_async(&'_ mut self, sz: usize) -> GrantExactFuture<'a, '_, N> {
+    pub fn grant_exact_async(&'_ mut self, sz: usize) -> GrantExactFuture<'a, '_, B> {
         GrantExactFuture { prod: self, sz }
     }
 
@@ -547,20 +639,26 @@ impl<'a, const N: usize> Producer<'a, N> {
     pub fn grant_max_remaining_async(
         &'_ mut self,
         sz: usize,
-    ) -> GrantMaxRemainingFuture<'a, '_, N> {
+    ) -> GrantMaxRemainingFuture<'a, '_, B> {
         GrantMaxRemainingFuture { prod: self, sz }
     }
 }
 
-/// `Consumer` is the primary interface for reading data from a `BBBuffer`.
-pub struct Consumer<'a, const N: usize> {
-    bbq: NonNull<BBBuffer<N>>,
+/// `Consumer` is the primary interface for reading data from a `BBQueue`.
+pub struct Consumer<'a, B>
+where
+    B: BufferProvider,
+{
+    bbq: NonNull<BBQueue<B>>,
     pd: PhantomData<&'a ()>,
 }
 
-unsafe impl<'a, const N: usize> Send for Consumer<'a, N> {}
+unsafe impl<'a, B> Send for Consumer<'a, B> where B: BufferProvider {}
 
-impl<'a, const N: usize> Consumer<'a, N> {
+impl<'a, B> Consumer<'a, B>
+where
+    B: BufferProvider,
+{
     /// Obtains a contiguous slice of committed bytes. This slice may not
     /// contain ALL available bytes, if the writer has wrapped around. The
     /// remaining bytes will be available after all readable bytes are
@@ -569,10 +667,10 @@ impl<'a, const N: usize> Consumer<'a, N> {
     /// ```rust
     /// # // bbqueue test shim!
     /// # fn bbqtest() {
-    /// use bbqueue::BBBuffer;
+    /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
     /// // Create and split a new buffer of 6 elements
-    /// let buffer: BBBuffer<6> = BBBuffer::new();
+    /// let buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
     /// let (mut prod, mut cons) = buffer.try_split().unwrap();
     ///
     /// // Successfully obtain and commit a grant of four bytes
@@ -591,7 +689,7 @@ impl<'a, const N: usize> Consumer<'a, N> {
     /// # bbqtest();
     /// # }
     /// ```
-    pub fn read(&mut self) -> Result<GrantR<'a, N>> {
+    pub fn read(&mut self) -> Result<GrantR<'a, B>> {
         let inner = unsafe { &self.bbq.as_ref() };
 
         if atomic::swap(&inner.read_in_progress, true, AcqRel) {
@@ -643,7 +741,7 @@ impl<'a, const N: usize> Consumer<'a, N> {
 
     /// Obtains two disjoint slices, which are each contiguous of committed bytes.
     /// Combined these contain all previously commited data.
-    pub fn split_read(&mut self) -> Result<SplitGrantR<'a, N>> {
+    pub fn split_read(&mut self) -> Result<SplitGrantR<'a, B>> {
         let inner = unsafe { &self.bbq.as_ref() };
 
         if atomic::swap(&inner.read_in_progress, true, AcqRel) {
@@ -698,18 +796,21 @@ impl<'a, const N: usize> Consumer<'a, N> {
 
     /// Async version of [Self::read].
     /// Will wait for the buffer to have data to read. When data is available, the grant is returned.
-    pub fn read_async<'b>(&'b mut self) -> GrantReadFuture<'a, 'b, N> {
+    pub fn read_async<'b>(&'b mut self) -> GrantReadFuture<'a, 'b, B> {
         GrantReadFuture { cons: self }
     }
 
     /// Async version of [Self::split_read].
     /// Will wait just like [Self::read_async], but returns the split grant to obtain all the available data.
-    pub fn split_read_async<'b>(&'b mut self) -> GrantSplitReadFuture<'a, 'b, N> {
+    pub fn split_read_async<'b>(&'b mut self) -> GrantSplitReadFuture<'a, 'b, B> {
         GrantSplitReadFuture { cons: self }
     }
 }
 
-impl<const N: usize> BBBuffer<N> {
+impl<B> BBQueue<B>
+where
+    B: BufferProvider,
+{
     /// Returns the size of the backing storage.
     ///
     /// This is the maximum number of bytes that can be stored in this queue.
@@ -717,10 +818,10 @@ impl<const N: usize> BBBuffer<N> {
     /// ```rust
     /// # // bbqueue test shim!
     /// # fn bbqtest() {
-    /// use bbqueue::BBBuffer;
+    /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
     /// // Create a new buffer of 6 elements
-    /// let buffer: BBBuffer<6> = BBBuffer::new();
+    /// let buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
     /// assert_eq!(buffer.capacity(), 6);
     /// # // bbqueue test shim!
     /// # }
@@ -731,7 +832,7 @@ impl<const N: usize> BBBuffer<N> {
     /// # }
     /// ```
     pub const fn capacity(&self) -> usize {
-        N
+        self.capacity
     }
 }
 
@@ -746,13 +847,16 @@ impl<const N: usize> BBBuffer<N> {
 /// If the `thumbv6` feature is selected, dropping the grant
 /// without committing it takes a short critical section,
 #[derive(Debug, PartialEq)]
-pub struct GrantW<'a, const N: usize> {
+pub struct GrantW<'a, B>
+where
+    B: BufferProvider,
+{
     pub(crate) buf: &'a mut [u8],
-    bbq: NonNull<BBBuffer<N>>,
+    bbq: NonNull<BBQueue<B>>,
     pub(crate) to_commit: usize,
 }
 
-unsafe impl<'a, const N: usize> Send for GrantW<'a, N> {}
+unsafe impl<'a, B> Send for GrantW<'a, B> where B: BufferProvider {}
 
 /// A structure representing a contiguous region of memory that
 /// may be read from, and potentially "released" (or cleared)
@@ -767,9 +871,12 @@ unsafe impl<'a, const N: usize> Send for GrantW<'a, N> {}
 /// If the `thumbv6` feature is selected, dropping the grant
 /// without releasing it takes a short critical section,
 #[derive(Debug, PartialEq)]
-pub struct GrantR<'a, const N: usize> {
+pub struct GrantR<'a, B>
+where
+    B: BufferProvider,
+{
     pub(crate) buf: &'a mut [u8],
-    bbq: NonNull<BBBuffer<N>>,
+    bbq: NonNull<BBQueue<B>>,
     pub(crate) to_release: usize,
 }
 
@@ -777,18 +884,24 @@ pub struct GrantR<'a, const N: usize> {
 /// may be read from, and potentially "released" (or cleared)
 /// from the queue
 #[derive(Debug, PartialEq)]
-pub struct SplitGrantR<'a, const N: usize> {
+pub struct SplitGrantR<'a, B>
+where
+    B: BufferProvider,
+{
     pub(crate) buf1: &'a mut [u8],
     pub(crate) buf2: &'a mut [u8],
-    bbq: NonNull<BBBuffer<N>>,
+    bbq: NonNull<BBQueue<B>>,
     pub(crate) to_release: usize,
 }
 
-unsafe impl<'a, const N: usize> Send for GrantR<'a, N> {}
+unsafe impl<'a, B> Send for GrantR<'a, B> where B: BufferProvider {}
 
-unsafe impl<'a, const N: usize> Send for SplitGrantR<'a, N> {}
+unsafe impl<'a, B> Send for SplitGrantR<'a, B> where B: BufferProvider {}
 
-impl<'a, const N: usize> GrantW<'a, N> {
+impl<'a, B> GrantW<'a, B>
+where
+    B: BufferProvider,
+{
     /// Finalizes a writable grant given by `grant()` or `grant_max()`.
     /// This makes the data available to be read via `read()`. This consumes
     /// the grant.
@@ -808,10 +921,10 @@ impl<'a, const N: usize> GrantW<'a, N> {
     /// ```rust
     /// # // bbqueue test shim!
     /// # fn bbqtest() {
-    /// use bbqueue::BBBuffer;
+    /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
     /// // Create and split a new buffer of 6 elements
-    /// let buffer: BBBuffer<6> = BBBuffer::new();
+    /// let buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
     /// let (mut prod, mut cons) = buffer.try_split().unwrap();
     ///
     /// // Successfully obtain and commit a grant of four bytes
@@ -866,7 +979,7 @@ impl<'a, const N: usize> GrantW<'a, N> {
         let write = inner.write.load(Acquire);
         atomic::fetch_sub(&inner.reserve, len - used, AcqRel);
 
-        let max = N;
+        let max = len;
         let last = inner.last.load(Acquire);
         let new_write = inner.reserve.load(Acquire);
 
@@ -908,7 +1021,10 @@ impl<'a, const N: usize> GrantW<'a, N> {
     }
 }
 
-impl<'a, const N: usize> GrantR<'a, N> {
+impl<'a, B> GrantR<'a, B>
+where
+    B: BufferProvider,
+{
     /// Release a sequence of bytes from the buffer, allowing the space
     /// to be used by later writes. This consumes the grant.
     ///
@@ -937,10 +1053,10 @@ impl<'a, const N: usize> GrantR<'a, N> {
     /// ```
     /// # // bbqueue test shim!
     /// # fn bbqtest() {
-    /// use bbqueue::BBBuffer;
+    /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
     /// // Create and split a new buffer of 6 elements
-    /// let buffer: BBBuffer<6> = BBBuffer::new();
+    /// let buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
     /// let (mut prod, mut cons) = buffer.try_split().unwrap();
     ///
     /// // Successfully obtain and commit a grant of four bytes
@@ -1015,7 +1131,10 @@ impl<'a, const N: usize> GrantR<'a, N> {
     }
 }
 
-impl<'a, const N: usize> SplitGrantR<'a, N> {
+impl<'a, B> SplitGrantR<'a, B>
+where
+    B: BufferProvider,
+{
     /// Release a sequence of bytes from the buffer, allowing the space
     /// to be used by later writes. This consumes the grant.
     ///
@@ -1037,10 +1156,10 @@ impl<'a, const N: usize> SplitGrantR<'a, N> {
     /// ```
     /// # // bbqueue test shim!
     /// # fn bbqtest() {
-    /// use bbqueue::BBBuffer;
+    /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
     /// // Create and split a new buffer of 6 elements
-    /// let buffer: BBBuffer<6> = BBBuffer::new();
+    /// let buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
     /// let (mut prod, mut cons) = buffer.try_split().unwrap();
     ///
     /// // Successfully obtain and commit a grant of four bytes
@@ -1109,25 +1228,37 @@ impl<'a, const N: usize> SplitGrantR<'a, N> {
     }
 }
 
-impl<'a, const N: usize> Drop for GrantW<'a, N> {
+impl<'a, B> Drop for GrantW<'a, B>
+where
+    B: BufferProvider,
+{
     fn drop(&mut self) {
         self.commit_inner(self.to_commit)
     }
 }
 
-impl<'a, const N: usize> Drop for GrantR<'a, N> {
+impl<'a, B> Drop for GrantR<'a, B>
+where
+    B: BufferProvider,
+{
     fn drop(&mut self) {
         self.release_inner(self.to_release)
     }
 }
 
-impl<'a, const N: usize> Drop for SplitGrantR<'a, N> {
+impl<'a, B> Drop for SplitGrantR<'a, B>
+where
+    B: BufferProvider,
+{
     fn drop(&mut self) {
         self.release_inner(self.to_release)
     }
 }
 
-impl<'a, const N: usize> Deref for GrantW<'a, N> {
+impl<'a, B> Deref for GrantW<'a, B>
+where
+    B: BufferProvider,
+{
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
@@ -1135,13 +1266,19 @@ impl<'a, const N: usize> Deref for GrantW<'a, N> {
     }
 }
 
-impl<'a, const N: usize> DerefMut for GrantW<'a, N> {
+impl<'a, B> DerefMut for GrantW<'a, B>
+where
+    B: BufferProvider,
+{
     fn deref_mut(&mut self) -> &mut [u8] {
         self.buf
     }
 }
 
-impl<'a, const N: usize> Deref for GrantR<'a, N> {
+impl<'a, B> Deref for GrantR<'a, B>
+where
+    B: BufferProvider,
+{
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
@@ -1149,20 +1286,29 @@ impl<'a, const N: usize> Deref for GrantR<'a, N> {
     }
 }
 
-impl<'a, const N: usize> DerefMut for GrantR<'a, N> {
+impl<'a, B> DerefMut for GrantR<'a, B>
+where
+    B: BufferProvider,
+{
     fn deref_mut(&mut self) -> &mut [u8] {
         self.buf
     }
 }
 
 /// Future returned [Producer::grant_exact_async]
-pub struct GrantExactFuture<'a, 'b, const N: usize> {
-    prod: &'b mut Producer<'a, N>,
+pub struct GrantExactFuture<'a, 'b, B>
+where
+    B: BufferProvider,
+{
+    prod: &'b mut Producer<'a, B>,
     sz: usize,
 }
 
-impl<'a, 'b, const N: usize> Future for GrantExactFuture<'a, 'b, N> {
-    type Output = Result<GrantW<'a, N>>;
+impl<'a, 'b, B> Future for GrantExactFuture<'a, 'b, B>
+where
+    B: BufferProvider,
+{
+    type Output = Result<GrantW<'a, B>>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         // Check if it's event  possible to get the requested size
@@ -1173,8 +1319,9 @@ impl<'a, 'b, const N: usize> Future for GrantExactFuture<'a, 'b, N> {
         // Check if the buffer from 6 to 8 satisfies or if the buffer from 0 to 5 does.
         // If so, create the future, if not, we need the return since the future will never resolve.
         // Ideally, we could just wait for all the read to complete and reset the read and write to 0, but that is currently not supported
+        let max = unsafe { self.prod.bbq.as_ref().capacity() };
         let write = unsafe { self.prod.bbq.as_ref().write.load(Acquire) };
-        if self.sz > N || (self.sz > N - write && self.sz >= write) {
+        if self.sz > max || (self.sz > max - write && self.sz >= write) {
             return Poll::Ready(Err(Error::InsufficientSize));
         }
 
@@ -1194,13 +1341,19 @@ impl<'a, 'b, const N: usize> Future for GrantExactFuture<'a, 'b, N> {
 }
 
 /// Future returned [Producer::grant_max_remaining_async]
-pub struct GrantMaxRemainingFuture<'a, 'b, const N: usize> {
-    prod: &'b mut Producer<'a, N>,
+pub struct GrantMaxRemainingFuture<'a, 'b, B>
+where
+    B: BufferProvider,
+{
+    prod: &'b mut Producer<'a, B>,
     sz: usize,
 }
 
-impl<'a, 'b, const N: usize> Future for GrantMaxRemainingFuture<'a, 'b, N> {
-    type Output = Result<GrantW<'a, N>>;
+impl<'a, 'b, B> Future for GrantMaxRemainingFuture<'a, 'b, B>
+where
+    B: BufferProvider,
+{
+    type Output = Result<GrantW<'a, B>>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let sz = self.sz;
@@ -1219,12 +1372,18 @@ impl<'a, 'b, const N: usize> Future for GrantMaxRemainingFuture<'a, 'b, N> {
 }
 
 /// Future returned [Consumer::read_async]
-pub struct GrantReadFuture<'a, 'b, const N: usize> {
-    cons: &'b mut Consumer<'a, N>,
+pub struct GrantReadFuture<'a, 'b, B>
+where
+    B: BufferProvider,
+{
+    cons: &'b mut Consumer<'a, B>,
 }
 
-impl<'a, 'b, const N: usize> Future for GrantReadFuture<'a, 'b, N> {
-    type Output = Result<GrantR<'a, N>>;
+impl<'a, 'b, B> Future for GrantReadFuture<'a, 'b, B>
+where
+    B: BufferProvider,
+{
+    type Output = Result<GrantR<'a, B>>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.cons.read() {
@@ -1241,12 +1400,18 @@ impl<'a, 'b, const N: usize> Future for GrantReadFuture<'a, 'b, N> {
 }
 
 /// Future returned [Consumer::split_read_async]
-pub struct GrantSplitReadFuture<'a, 'b, const N: usize> {
-    cons: &'b mut Consumer<'a, N>,
+pub struct GrantSplitReadFuture<'a, 'b, B>
+where
+    B: BufferProvider,
+{
+    cons: &'b mut Consumer<'a, B>,
 }
 
-impl<'a, 'b, const N: usize> Future for GrantSplitReadFuture<'a, 'b, N> {
-    type Output = Result<SplitGrantR<'a, N>>;
+impl<'a, 'b, B> Future for GrantSplitReadFuture<'a, 'b, B>
+where
+    B: BufferProvider,
+{
+    type Output = Result<SplitGrantR<'a, B>>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.cons.split_read() {

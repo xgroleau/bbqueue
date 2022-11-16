@@ -22,8 +22,10 @@ block of contiguous memory, which can be filled (or emptied) by a DMA engine.
 ## Local usage
 
 ```rust
+# use bbqueue::{BBQueue, StaticBufferProvider};
+#
 // Create a buffer with six elements
-let bb: BBBuffer<6> = BBBuffer::new();
+let bb: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
 let (mut prod, mut cons) = bb.try_split().unwrap();
 
 // Request space for one byte
@@ -48,11 +50,11 @@ rgr.release(1);
 
 ## Static usage
 
-```rust, no_run
-use bbqueue::BBBuffer;
-
-// Create a buffer with six elements
-static BB: BBBuffer<6> = BBBuffer::new();
+```rust
+# use bbqueue::{BBQueue, StaticBufferProvider};
+#
+// Create a ststic buffer with six elements
+static BB: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
 
 fn main() {
     // Split the bbqueue into producer and consumer halves.
@@ -84,13 +86,55 @@ fn main() {
 }
 ```
 
-The `bbqueue` crate is located in `core/`, and tests are located in `bbqtest/`.
+## User provided memory usage
+
+```rust
+# use bbqueue::{BBQueue};
+#
+
+fn main() {
+    // Create a buffer with the user provided memory
+    let mut buf = [0; 6];
+    let bb = BBQueue::new_from_slice(&mut buf);
+    // Split the bbqueue into producer and consumer halves.
+    // These halves can be sent to different threads or to
+    // an interrupt handler for thread safe SPSC usage
+    let (mut prod, mut cons) = bb.try_split().unwrap();
+
+    // Request space for one byte
+    let mut wgr = prod.grant_exact(1).unwrap();
+
+    // Set the data
+    wgr[0] = 123;
+
+    assert_eq!(wgr.len(), 1);
+
+    // Make the data ready for consuming
+    wgr.commit(1);
+
+    // Read all available bytes
+    let rgr = cons.read().unwrap();
+
+    assert_eq!(rgr[0], 123);
+
+    // Release the space for later writes
+    rgr.release(1);
+
+    // The buffer cannot be split twice
+    assert!(bb.try_split().is_err());
+}
+```
 
 ## Features
 
 By default BBQueue uses atomic operations which are available on most platforms. However on some
 (mostly embedded) platforms atomic support is limited and with the default features you will get
 a compiler error about missing atomic methods.
+
+This crate contains special support for Cortex-M0(+) targets with the `thumbv6` feature. By
+enabling the feature, unsupported atomic operations will be replaced with critical sections
+implemented by disabling interrupts. The critical sections are very short, a few instructions at
+most, so they should make no difference to most applications.
 
 
 # License

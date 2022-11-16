@@ -20,10 +20,10 @@
 //! ## Local usage
 //!
 //! ```rust, no_run
-//! # use bbqueue::BBBuffer;
+//! # use bbqueue::{BBQueue, StaticBufferProvider};
 //! #
 //! // Create a buffer with six elements
-//! let bb: BBBuffer<6> = BBBuffer::new();
+//! let bb: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
 //! let (mut prod, mut cons) = bb.try_split().unwrap();
 //!
 //! // Request space for one byte
@@ -49,10 +49,10 @@
 //! ## Static usage
 //!
 //! ```rust, no_run
-//! # use bbqueue::BBBuffer;
+//! # use bbqueue::{BBQueue, StaticBufferProvider};
 //! #
-//! // Create a buffer with six elements
-//! static BB: BBBuffer<6> = BBBuffer::new();
+//! // Create a ststic buffer with six elements
+//! static BB: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
 //!
 //! fn main() {
 //!     // Split the bbqueue into producer and consumer halves.
@@ -84,6 +84,45 @@
 //! }
 //! ```
 //!
+//! ## User provided memory usage
+//!
+//! ```rust, no_run
+//! # use bbqueue::{BBQueue};
+//! #
+//!
+//! fn main() {
+//!     // Create a buffer with the user provided memory
+//!     let mut buf = [0; 6];
+//!     let bb = BBQueue::new_from_slice(&mut buf);
+//!     // Split the bbqueue into producer and consumer halves.
+//!     // These halves can be sent to different threads or to
+//!     // an interrupt handler for thread safe SPSC usage
+//!     let (mut prod, mut cons) = bb.try_split().unwrap();
+//!
+//!     // Request space for one byte
+//!     let mut wgr = prod.grant_exact(1).unwrap();
+//!
+//!     // Set the data
+//!     wgr[0] = 123;
+//!
+//!     assert_eq!(wgr.len(), 1);
+//!
+//!     // Make the data ready for consuming
+//!     wgr.commit(1);
+//!
+//!     // Read all available bytes
+//!     let rgr = cons.read().unwrap();
+//!
+//!     assert_eq!(rgr[0], 123);
+//!
+//!     // Release the space for later writes
+//!     rgr.release(1);
+//!
+//!     // The buffer cannot be split twice
+//!     assert!(bb.try_split().is_err());
+//! }
+//! ```
+//!
 //! ## Features
 //!
 //! By default BBQueue uses atomic operations which are available on most platforms. However on some
@@ -99,8 +138,11 @@
 #![deny(missing_docs)]
 #![deny(warnings)]
 
-mod bbbuffer;
-pub use bbbuffer::*;
+mod bbqueue;
+pub use crate::bbqueue::*;
+
+mod buffer_provider;
+pub use buffer_provider::*;
 
 pub mod framed;
 mod vusize;
