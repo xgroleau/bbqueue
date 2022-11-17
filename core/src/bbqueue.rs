@@ -117,8 +117,7 @@ where
             // Explicitly zero the data to avoid undefined behavior.
             // This is required, because we hand out references to the buffers,
             // which mean that creating them as references is technically UB for now
-            let buf = &mut *self.buf.get();
-            let mu_ptr = buf.buf();
+            let mu_ptr = (&mut *self.buf.get()).buf();
             (*mu_ptr).as_mut_ptr().write_bytes(0u8, 1);
 
             let nn1 = NonNull::new_unchecked(self as *const _ as *mut _);
@@ -505,7 +504,7 @@ where
 
         // This is sound, as UnsafeCell, MaybeUninit, and GenericArray
         // are all `#[repr(Transparent)]
-        let start_of_buf_ptr = inner.buf.get().cast::<u8>();
+        let start_of_buf_ptr = unsafe { (&mut *inner.buf.get()).buf().as_mut_ptr().cast::<u8>() };
         let grant_slice =
             unsafe { from_raw_parts_mut(start_of_buf_ptr.offset(start as isize), sz) };
 
@@ -609,7 +608,7 @@ where
 
         // This is sound, as UnsafeCell, MaybeUninit, and GenericArray
         // are all `#[repr(Transparent)]
-        let start_of_buf_ptr = inner.buf.get().cast::<u8>();
+        let start_of_buf_ptr = unsafe { (&mut *inner.buf.get()).buf().as_mut_ptr().cast::<u8>() };
         let grant_slice =
             unsafe { from_raw_parts_mut(start_of_buf_ptr.offset(start as isize), sz) };
 
@@ -731,7 +730,7 @@ where
 
         // This is sound, as UnsafeCell, MaybeUninit, and GenericArray
         // are all `#[repr(Transparent)]
-        let start_of_buf_ptr = inner.buf.get().cast::<u8>();
+        let start_of_buf_ptr = unsafe { (&mut *inner.buf.get()).buf().as_mut_ptr().cast::<u8>() };
         let grant_slice = unsafe { from_raw_parts_mut(start_of_buf_ptr.offset(read as isize), sz) };
 
         Ok(GrantR {
@@ -784,7 +783,7 @@ where
 
         // This is sound, as UnsafeCell, MaybeUninit, and GenericArray
         // are all `#[repr(Transparent)]
-        let start_of_buf_ptr = inner.buf.get().cast::<u8>();
+        let start_of_buf_ptr = unsafe { (&mut *inner.buf.get()).buf().as_mut_ptr().cast::<u8>() };
         let grant_slice1 =
             unsafe { from_raw_parts_mut(start_of_buf_ptr.offset(read as isize), sz1) };
         let grant_slice2 = unsafe { from_raw_parts_mut(start_of_buf_ptr, sz2) };
