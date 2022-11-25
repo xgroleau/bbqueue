@@ -154,6 +154,7 @@ use core::result::Result as CoreResult;
 pub type Result<T> = CoreResult<T, Error>;
 
 /// Error type used by the `BBQueue` interfaces
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum Error {
     /// The buffer does not contain sufficient size for the requested action
