@@ -14,20 +14,14 @@ impl WakerStorage {
 
     /// Set the waker, will wake the previous one if one was already stored.
     pub fn set(&mut self, new: &Waker) {
-        match self.waker.take() {
-            Some(prev) => {
-                // No need to clone if they wake the same task.
-                if prev.will_wake(new) {
-                    return;
+        match &mut self.waker {
+            // No need to clone if they wake the same task.
+            Some(prev) if (prev.will_wake(new)) => {}
+            // Replace and wake previous
+            v => {
+                if let Some(prev) = v.replace(new.clone()) {
+                    prev.wake()
                 }
-                // Wake the previous waker and replace it
-                else {
-                    prev.wake();
-                    self.waker.replace(new.clone());
-                }
-            }
-            None => {
-                self.waker.replace(new.clone());
             }
         }
     }
