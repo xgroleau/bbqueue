@@ -257,12 +257,9 @@ where
     /// ```rust,no_run
     /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
-    ///
-    /// fn main() {
-    ///    let provider = StaticBufferProvider::<6>::new();
-    ///    let buf = BBQueue::new(provider);
-    ///    let (prod, cons) = buf.try_split().unwrap();
-    /// }
+    /// let provider = StaticBufferProvider::<6>::new();
+    /// let buf = BBQueue::new(provider);
+    /// let (prod, cons) = buf.try_split().unwrap();
     /// ```
     pub fn new(mut buf: B) -> Self {
         Self {
@@ -374,11 +371,9 @@ impl<'a> BBQueue<SliceBufferProvider<'a>> {
     /// ```rust,no_run
     /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
-    /// fn main() {
-    ///    let mut bb_memory = [0; 6];
-    ///    let buf = BBQueue::new_from_slice(&mut bb_memory);
-    ///    let (prod, cons) = buf.try_split().unwrap();
-    /// }
+    /// let mut bb_memory = [0; 6];
+    /// let buf = BBQueue::new_from_slice(&mut bb_memory);
+    /// let (prod, cons) = buf.try_split().unwrap();
     /// ```
     pub fn new_from_slice(buf: &'a mut [u8]) -> Self {
         Self::new(SliceBufferProvider::new(buf))
@@ -478,24 +473,22 @@ where
                 inner.write_in_progress.store(false, Release);
                 return Err(Error::InsufficientSize);
             }
+        } else if write + sz <= max {
+            // Non inverted condition
+            write
         } else {
-            if write + sz <= max {
-                // Non inverted condition
-                write
-            } else {
-                // Not inverted, but need to go inverted
+            // Not inverted, but need to go inverted
 
-                // NOTE: We check sz < read, NOT <=, because
-                // write must never == read in an inverted condition, since
-                // we will then not be able to tell if we are inverted or not
-                if sz < read {
-                    // Invertible situation
-                    0
-                } else {
-                    // Not invertible, no space
-                    inner.write_in_progress.store(false, Release);
-                    return Err(Error::InsufficientSize);
-                }
+            // NOTE: We check sz < read, NOT <=, because
+            // write must never == read in an inverted condition, since
+            // we will then not be able to tell if we are inverted or not
+            if sz < read {
+                // Invertible situation
+                0
+            } else {
+                // Not invertible, no space
+                inner.write_in_progress.store(false, Release);
+                return Err(Error::InsufficientSize);
             }
         };
 
@@ -504,9 +497,8 @@ where
 
         // This is sound, as UnsafeCell, MaybeUninit, and GenericArray
         // are all `#[repr(Transparent)]
-        let start_of_buf_ptr = unsafe { (&mut *inner.buf.get()).buf().as_mut_ptr().cast::<u8>() };
-        let grant_slice =
-            unsafe { from_raw_parts_mut(start_of_buf_ptr.offset(start as isize), sz) };
+        let start_of_buf_ptr = unsafe { (*inner.buf.get()).buf().as_mut_ptr().cast::<u8>() };
+        let grant_slice = unsafe { from_raw_parts_mut(start_of_buf_ptr.add(start), sz) };
 
         Ok(GrantW {
             buf: grant_slice,
@@ -580,25 +572,23 @@ where
                 inner.write_in_progress.store(false, Release);
                 return Err(Error::InsufficientSize);
             }
+        } else if write != max {
+            // Some (or all) room remaining in un-inverted case
+            sz = min(max - write, sz);
+            write
         } else {
-            if write != max {
-                // Some (or all) room remaining in un-inverted case
-                sz = min(max - write, sz);
-                write
-            } else {
-                // Not inverted, but need to go inverted
+            // Not inverted, but need to go inverted
 
-                // NOTE: We check read > 1, NOT read >= 1, because
-                // write must never == read in an inverted condition, since
-                // we will then not be able to tell if we are inverted or not
-                if read > 1 {
-                    sz = min(read - 1, sz);
-                    0
-                } else {
-                    // Not invertible, no space
-                    inner.write_in_progress.store(false, Release);
-                    return Err(Error::InsufficientSize);
-                }
+            // NOTE: We check read > 1, NOT read >= 1, because
+            // write must never == read in an inverted condition, since
+            // we will then not be able to tell if we are inverted or not
+            if read > 1 {
+                sz = min(read - 1, sz);
+                0
+            } else {
+                // Not invertible, no space
+                inner.write_in_progress.store(false, Release);
+                return Err(Error::InsufficientSize);
             }
         };
 
@@ -607,9 +597,8 @@ where
 
         // This is sound, as UnsafeCell, MaybeUninit, and GenericArray
         // are all `#[repr(Transparent)]
-        let start_of_buf_ptr = unsafe { (&mut *inner.buf.get()).buf().as_mut_ptr().cast::<u8>() };
-        let grant_slice =
-            unsafe { from_raw_parts_mut(start_of_buf_ptr.offset(start as isize), sz) };
+        let start_of_buf_ptr = unsafe { (*inner.buf.get()).buf().as_mut_ptr().cast::<u8>() };
+        let grant_slice = unsafe { from_raw_parts_mut(start_of_buf_ptr.add(start), sz) };
 
         Ok(GrantW {
             buf: grant_slice,
@@ -728,8 +717,8 @@ where
 
         // This is sound, as UnsafeCell, MaybeUninit, and GenericArray
         // are all `#[repr(Transparent)]
-        let start_of_buf_ptr = unsafe { (&mut *inner.buf.get()).buf().as_mut_ptr().cast::<u8>() };
-        let grant_slice = unsafe { from_raw_parts_mut(start_of_buf_ptr.offset(read as isize), sz) };
+        let start_of_buf_ptr = unsafe { (*inner.buf.get()).buf().as_mut_ptr().cast::<u8>() };
+        let grant_slice = unsafe { from_raw_parts_mut(start_of_buf_ptr.add(read), sz) };
 
         Ok(GrantR {
             buf: grant_slice,
@@ -780,9 +769,8 @@ where
 
         // This is sound, as UnsafeCell, MaybeUninit, and GenericArray
         // are all `#[repr(Transparent)]
-        let start_of_buf_ptr = unsafe { (&mut *inner.buf.get()).buf().as_mut_ptr().cast::<u8>() };
-        let grant_slice1 =
-            unsafe { from_raw_parts_mut(start_of_buf_ptr.offset(read as isize), sz1) };
+        let start_of_buf_ptr = unsafe { (*inner.buf.get()).buf().as_mut_ptr().cast::<u8>() };
+        let grant_slice1 = unsafe { from_raw_parts_mut(start_of_buf_ptr.add(read), sz1) };
         let grant_slice2 = unsafe { from_raw_parts_mut(start_of_buf_ptr, sz2) };
 
         Ok(SplitGrantR {
@@ -947,6 +935,8 @@ where
     /// `&'static mut [u8]`, it is not possible for the inner reference to outlive the
     /// grant itself.
     ///
+    /// # Safety
+    ///
     /// You MUST guarantee that in no cases, the reference that is returned here outlives
     /// the grant itself. Once the grant has been released, referencing the data contained
     /// WILL cause undefined behavior.
@@ -1092,6 +1082,8 @@ where
     /// if you need to hand this buffer to a function that expects to receive a
     /// `&'static [u8]`, it is not possible for the inner reference to outlive the
     /// grant itself.
+    ///
+    /// # Safety
     ///
     /// You MUST guarantee that in no cases, the reference that is returned here outlives
     /// the grant itself. Once the grant has been released, referencing the data contained
