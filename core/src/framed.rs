@@ -186,7 +186,7 @@ where
 /// NOTE: If the grant is dropped without explicitly commiting
 /// the contents without first calling `to_commit()`, then no
 /// frame will be comitted for writing.
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct FrameGrantW<'a, B>
 where
     B: BufferProvider,
@@ -199,7 +199,7 @@ where
 ///
 /// NOTE: If the grant is dropped without explicitly releasing
 /// the contents, then no frame will be released.
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct FrameGrantR<'a, B>
 where
     B: BufferProvider,

@@ -121,19 +121,19 @@ mod tests {
         // Initialize
         let bb: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
         let (mut prod, mut cons) = bb.try_split().unwrap();
-        assert_eq!(cons.read(), Err(BBQError::InsufficientSize));
+        assert!(matches!(cons.read(), Err(BBQError::InsufficientSize)));
 
         // Initial grant, shouldn't roll over
         let mut x = prod.grant_exact(4).unwrap();
 
         // Still no data available yet
-        assert_eq!(cons.read(), Err(BBQError::InsufficientSize));
+        assert!(matches!(cons.read(), Err(BBQError::InsufficientSize)));
 
         // Add full data from grant
         x.copy_from_slice(&[1, 2, 3, 4]);
 
         // Still no data available yet
-        assert_eq!(cons.read(), Err(BBQError::InsufficientSize));
+        assert!(matches!(cons.read(), Err(BBQError::InsufficientSize)));
 
         // Commit data
         x.commit(4);

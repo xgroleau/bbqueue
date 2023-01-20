@@ -146,7 +146,6 @@ pub use buffer_provider::*;
 
 pub mod framed;
 mod vusize;
-mod waker;
 
 use core::result::Result as CoreResult;
 

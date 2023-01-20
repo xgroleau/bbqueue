@@ -1,17 +1,16 @@
+use futures::task::AtomicWaker;
+
 use crate::{
     framed::{FrameConsumer, FrameProducer},
-    waker::WakerStorage,
     BufferProvider, Error, Result, SliceBufferProvider, StaticBufferProvider,
 };
 use core::{
     cell::UnsafeCell,
     cmp::min,
     future::Future,
-    marker::PhantomData,
     mem::{forget, transmute},
     ops::{Deref, DerefMut},
     pin::Pin,
-    ptr::NonNull,
     result::Result as CoreResult,
     slice::from_raw_parts_mut,
     sync::atomic::{
@@ -64,11 +63,11 @@ where
 
     /// Read waker for async support
     /// Woken up when a commit is done
-    read_waker: WakerStorage,
+    read_waker: AtomicWaker,
 
     /// Write waker for async support
     /// Woken up when a release is done
-    write_waker: WakerStorage,
+    write_waker: AtomicWaker,
 }
 
 unsafe impl<B> Sync for BBQueue<B> where B: BufferProvider {}
@@ -117,23 +116,11 @@ where
             // Explicitly zero the data to avoid undefined behavior.
             // This is required, because we hand out references to the buffers,
             // which mean that creating them as references is technically UB for now
-            let mu_ptr = (&mut *self.buf.get()).buf();
-            (*mu_ptr).as_mut_ptr().write_bytes(0u8, 1);
-
-            let nn1 = NonNull::new_unchecked(self as *const _ as *mut _);
-            let nn2 = NonNull::new_unchecked(self as *const _ as *mut _);
-
-            Ok((
-                Producer {
-                    bbq: nn1,
-                    pd: PhantomData,
-                },
-                Consumer {
-                    bbq: nn2,
-                    pd: PhantomData,
-                },
-            ))
+            let mu_ptr = (*self.buf.get()).buf();
+            core::ptr::write_bytes(mu_ptr.as_mut_ptr(), 0, mu_ptr.len());
         }
+
+        Ok((Producer { bbq: self }, Consumer { bbq: self }))
     }
 
     /// Attempt to split the `BBQueue` into `FrameConsumer` and `FrameProducer` halves
@@ -196,8 +183,8 @@ where
         // can assume the buffer has been split, because
 
         // Are these our producers and consumers?
-        let our_prod = prod.bbq.as_ptr() as *const Self == self;
-        let our_cons = cons.bbq.as_ptr() as *const Self == self;
+        let our_prod = core::ptr::eq(prod.bbq, self);
+        let our_cons = core::ptr::eq(cons.bbq, self);
 
         if !(our_prod && our_cons) {
             // Can't release, not our producer and consumer
@@ -211,10 +198,6 @@ where
             // Can't release, active grant(s) in progress
             return Err((prod, cons));
         }
-
-        // Drop the producer and consumer halves
-        drop(prod);
-        drop(cons);
 
         // Re-initialize the buffer (not totally needed, but nice to do)
         self.write.store(0, Release);
@@ -300,10 +283,10 @@ where
             already_split: AtomicBool::new(false),
 
             /// Shared between reader and writer.
-            read_waker: WakerStorage::new(),
+            read_waker: AtomicWaker::new(),
 
             /// Shared between reader and writer
-            write_waker: WakerStorage::new(),
+            write_waker: AtomicWaker::new(),
         }
     }
 }
@@ -358,10 +341,10 @@ impl<const N: usize> BBQueue<StaticBufferProvider<N>> {
             already_split: AtomicBool::new(false),
 
             /// Shared between reader and writer.
-            read_waker: WakerStorage::new(),
+            read_waker: AtomicWaker::new(),
 
             /// Shared between reader and writer
-            write_waker: WakerStorage::new(),
+            write_waker: AtomicWaker::new(),
         }
     }
 }
@@ -408,11 +391,8 @@ pub struct Producer<'a, B>
 where
     B: BufferProvider,
 {
-    bbq: NonNull<BBQueue<B>>,
-    pd: PhantomData<&'a ()>,
+    bbq: &'a BBQueue<B>,
 }
-
-unsafe impl<'a, B> Send for Producer<'a, B> where B: BufferProvider {}
 
 impl<'a, B> Producer<'a, B>
 where
@@ -451,7 +431,7 @@ where
     /// # }
     /// ```
     pub fn grant_exact(&mut self, sz: usize) -> Result<GrantW<'a, B>> {
-        let inner = unsafe { &self.bbq.as_ref() };
+        let inner = &self.bbq;
 
         if atomic::swap(&inner.write_in_progress, true, AcqRel) {
             return Err(Error::GrantInProgress);
@@ -461,7 +441,7 @@ where
         // be careful writing to `load`
         let write = inner.write.load(Acquire);
         let read = inner.read.load(Acquire);
-        let max = unsafe { self.bbq.as_ref().capacity() };
+        let max = self.bbq.capacity();
         let already_inverted = write < read;
 
         let start = if already_inverted {
@@ -546,7 +526,7 @@ where
     /// # }
     /// ```
     pub fn grant_max_remaining(&mut self, mut sz: usize) -> Result<GrantW<'a, B>> {
-        let inner = unsafe { &self.bbq.as_ref() };
+        let inner = &self.bbq;
 
         if atomic::swap(&inner.write_in_progress, true, AcqRel) {
             return Err(Error::GrantInProgress);
@@ -556,7 +536,7 @@ where
         // be careful writing to `load`
         let write = inner.write.load(Acquire);
         let read = inner.read.load(Acquire);
-        let max = unsafe { self.bbq.as_ref().capacity() };
+        let max = self.bbq.capacity();
 
         let already_inverted = write < read;
 
@@ -637,11 +617,8 @@ pub struct Consumer<'a, B>
 where
     B: BufferProvider,
 {
-    bbq: NonNull<BBQueue<B>>,
-    pd: PhantomData<&'a ()>,
+    bbq: &'a BBQueue<B>,
 }
-
-unsafe impl<'a, B> Send for Consumer<'a, B> where B: BufferProvider {}
 
 impl<'a, B> Consumer<'a, B>
 where
@@ -678,7 +655,7 @@ where
     /// # }
     /// ```
     pub fn read(&mut self) -> Result<GrantR<'a, B>> {
-        let inner = unsafe { &self.bbq.as_ref() };
+        let inner = &self.bbq;
 
         if atomic::swap(&inner.read_in_progress, true, AcqRel) {
             return Err(Error::GrantInProgress);
@@ -730,7 +707,7 @@ where
     /// Obtains two disjoint slices, which are each contiguous of committed bytes.
     /// Combined these contain all previously commited data.
     pub fn split_read(&mut self) -> Result<SplitGrantR<'a, B>> {
-        let inner = unsafe { &self.bbq.as_ref() };
+        let inner = &self.bbq;
 
         if atomic::swap(&inner.read_in_progress, true, AcqRel) {
             return Err(Error::GrantInProgress);
@@ -833,17 +810,15 @@ where
 ///
 /// If the `thumbv6` feature is selected, dropping the grant
 /// without committing it takes a short critical section,
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct GrantW<'a, B>
 where
     B: BufferProvider,
 {
     pub(crate) buf: &'a mut [u8],
-    bbq: NonNull<BBQueue<B>>,
+    bbq: &'a BBQueue<B>,
     pub(crate) to_commit: usize,
 }
-
-unsafe impl<'a, B> Send for GrantW<'a, B> where B: BufferProvider {}
 
 /// A structure representing a contiguous region of memory that
 /// may be read from, and potentially "released" (or cleared)
@@ -857,33 +832,29 @@ unsafe impl<'a, B> Send for GrantW<'a, B> where B: BufferProvider {}
 ///
 /// If the `thumbv6` feature is selected, dropping the grant
 /// without releasing it takes a short critical section,
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct GrantR<'a, B>
 where
     B: BufferProvider,
 {
     pub(crate) buf: &'a mut [u8],
-    bbq: NonNull<BBQueue<B>>,
+    bbq: &'a BBQueue<B>,
     pub(crate) to_release: usize,
 }
 
 /// A structure representing up to two contiguous regions of memory that
 /// may be read from, and potentially "released" (or cleared)
 /// from the queue
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct SplitGrantR<'a, B>
 where
     B: BufferProvider,
 {
     pub(crate) buf1: &'a mut [u8],
     pub(crate) buf2: &'a mut [u8],
-    bbq: NonNull<BBQueue<B>>,
+    bbq: &'a BBQueue<B>,
     pub(crate) to_release: usize,
 }
-
-unsafe impl<'a, B> Send for GrantR<'a, B> where B: BufferProvider {}
-
-unsafe impl<'a, B> Send for SplitGrantR<'a, B> where B: BufferProvider {}
 
 impl<'a, B> GrantW<'a, B>
 where
@@ -949,7 +920,7 @@ where
 
     #[inline(always)]
     pub(crate) fn commit_inner(&mut self, used: usize) {
-        let inner = unsafe { &self.bbq.as_ref() };
+        let inner = &self.bbq;
 
         // If there is no grant in progress, return early. This
         // generally means we are dropping the grant within a
@@ -999,9 +970,7 @@ where
         // Allow subsequent grants
         inner.write_in_progress.store(false, Release);
 
-        unsafe {
-            self.bbq.as_mut().read_waker.wake();
-        };
+        self.bbq.read_waker.wake();
     }
 
     /// Configures the amount of bytes to be commited on drop.
@@ -1097,7 +1066,7 @@ where
 
     #[inline(always)]
     pub(crate) fn release_inner(&mut self, used: usize) {
-        let inner = unsafe { &self.bbq.as_ref() };
+        let inner = &self.bbq;
 
         // If there is no grant in progress, return early. This
         // generally means we are dropping the grant within a
@@ -1113,7 +1082,7 @@ where
         let _ = atomic::fetch_add(&inner.read, used, Release);
 
         inner.read_in_progress.store(false, Release);
-        unsafe { self.bbq.as_mut().write_waker.wake() };
+        self.bbq.write_waker.wake();
     }
 
     /// Configures the amount of bytes to be released on drop.
@@ -1185,7 +1154,7 @@ where
 
     #[inline(always)]
     pub(crate) fn release_inner(&mut self, used: usize) {
-        let inner = unsafe { &self.bbq.as_ref() };
+        let inner = &self.bbq;
 
         // If there is no grant in progress, return early. This
         // generally means we are dropping the grant within a
@@ -1310,8 +1279,8 @@ where
         // Check if the buffer from 6 to 8 satisfies or if the buffer from 0 to 5 does.
         // If so, create the future, if not, we need the return since the future will never resolve.
         // Ideally, we could just wait for all the read to complete and reset the read and write to 0, but that is currently not supported
-        let max = unsafe { self.prod.bbq.as_ref().capacity() };
-        let write = unsafe { self.prod.bbq.as_ref().write.load(Acquire) };
+        let max = self.prod.bbq.capacity();
+        let write = self.prod.bbq.write.load(Acquire);
         if self.sz > max || (self.sz > max - write && self.sz >= write) {
             return Poll::Ready(Err(Error::InsufficientSize));
         }
@@ -1322,7 +1291,7 @@ where
             Ok(grant) => Poll::Ready(Ok(grant)),
             Err(e) => match e {
                 Error::GrantInProgress | Error::InsufficientSize => {
-                    unsafe { self.prod.bbq.as_mut().write_waker.set(cx.waker()) };
+                    self.prod.bbq.write_waker.register(cx.waker());
                     Poll::Pending
                 }
                 _ => Poll::Ready(Err(e)),
@@ -1353,7 +1322,7 @@ where
             Ok(grant) => Poll::Ready(Ok(grant)),
             Err(e) => match e {
                 Error::GrantInProgress | Error::InsufficientSize => {
-                    unsafe { self.prod.bbq.as_mut().write_waker.set(cx.waker()) };
+                    self.prod.bbq.write_waker.register(cx.waker());
                     Poll::Pending
                 }
                 _ => Poll::Ready(Err(e)),
@@ -1381,7 +1350,7 @@ where
             Ok(grant) => Poll::Ready(Ok(grant)),
             Err(e) => match e {
                 Error::InsufficientSize | Error::GrantInProgress => {
-                    unsafe { self.cons.bbq.as_mut().read_waker.set(cx.waker()) };
+                    self.cons.bbq.read_waker.register(cx.waker());
                     Poll::Pending
                 }
                 _ => Poll::Ready(Err(e)),
@@ -1409,7 +1378,7 @@ where
             Ok(grant) => Poll::Ready(Ok(grant)),
             Err(e) => match e {
                 Error::InsufficientSize | Error::GrantInProgress => {
-                    unsafe { self.cons.bbq.as_mut().read_waker.set(cx.waker()) };
+                    self.cons.bbq.read_waker.register(cx.waker());
                     Poll::Pending
                 }
                 _ => Poll::Ready(Err(e)),
