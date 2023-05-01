@@ -84,14 +84,14 @@ mod tests {
         }
     }
 
-    static BB: BBQueue<StaticBufferProvider<BUFFER_SIZE>> = BBQueue::new_static();
+    static mut BB: BBQueue<StaticBufferProvider<BUFFER_SIZE>> = BBQueue::new_static();
 
     use std::sync::mpsc::{channel, Receiver, Sender};
     use std::thread::spawn;
 
     #[test]
     fn hello() {
-        let (prod, cons) = BB.try_split().unwrap();
+        let (prod, cons) = unsafe { BB.try_split().unwrap() };
 
         // create the channels
         let (tx_1_2, rx_1_2): (

@@ -4,7 +4,7 @@ mod tests {
 
     #[test]
     fn frame_wrong_size() {
-        let bb: BBQueue<StaticBufferProvider<256>> = BBQueue::new_static();
+        let mut bb: BBQueue<StaticBufferProvider<256>> = BBQueue::new_static();
         let (mut prod, mut cons) = bb.try_split_framed().unwrap();
 
         // Create largeish grants
@@ -25,7 +25,7 @@ mod tests {
 
     #[test]
     fn full_size() {
-        let bb: BBQueue<StaticBufferProvider<256>> = BBQueue::new_static();
+        let mut bb: BBQueue<StaticBufferProvider<256>> = BBQueue::new_static();
         let (mut prod, mut cons) = bb.try_split_framed().unwrap();
         let mut ctr = 0;
 
@@ -66,7 +66,7 @@ mod tests {
 
     #[test]
     fn frame_overcommit() {
-        let bb: BBQueue<StaticBufferProvider<256>> = BBQueue::new_static();
+        let mut bb: BBQueue<StaticBufferProvider<256>> = BBQueue::new_static();
         let (mut prod, mut cons) = bb.try_split_framed().unwrap();
 
         // Create largeish grants
@@ -93,7 +93,7 @@ mod tests {
 
     #[test]
     fn frame_undercommit() {
-        let bb: BBQueue<StaticBufferProvider<512>> = BBQueue::new_static();
+        let mut bb: BBQueue<StaticBufferProvider<512>> = BBQueue::new_static();
         let (mut prod, mut cons) = bb.try_split_framed().unwrap();
 
         for _ in 0..100_000 {
@@ -132,7 +132,7 @@ mod tests {
 
     #[test]
     fn frame_auto_commit_release() {
-        let bb: BBQueue<StaticBufferProvider<256>> = BBQueue::new_static();
+        let mut bb: BBQueue<StaticBufferProvider<256>> = BBQueue::new_static();
         let (mut prod, mut cons) = bb.try_split_framed().unwrap();
 
         for _ in 0..100 {

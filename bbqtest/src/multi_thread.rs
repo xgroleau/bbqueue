@@ -48,8 +48,8 @@ mod tests {
         #[cfg(feature = "verbose")]
         println!("RTX: Running test...");
 
-        static BB: BBQueue<StaticBufferProvider<QUEUE_SIZE>> = BBQueue::new_static();
-        let (mut tx, mut rx) = BB.try_split().unwrap();
+        static mut BB: BBQueue<StaticBufferProvider<QUEUE_SIZE>> = BBQueue::new_static();
+        let (mut tx, mut rx) = unsafe { BB.try_split().unwrap() };
 
         let mut last_tx = Instant::now();
         let mut last_rx = last_tx.clone();
@@ -140,8 +140,8 @@ mod tests {
 
     #[test]
     fn sanity_check() {
-        static BB: BBQueue<StaticBufferProvider<QUEUE_SIZE>> = BBQueue::new_static();
-        let (mut tx, mut rx) = BB.try_split().unwrap();
+        static mut BB: BBQueue<StaticBufferProvider<QUEUE_SIZE>> = BBQueue::new_static();
+        let (mut tx, mut rx) = unsafe { BB.try_split().unwrap() };
 
         let mut last_tx = Instant::now();
         let mut last_rx = last_tx.clone();
@@ -234,8 +234,8 @@ mod tests {
 
     #[test]
     fn sanity_check_grant_max() {
-        static BB: BBQueue<StaticBufferProvider<QUEUE_SIZE>> = BBQueue::new_static();
-        let (mut tx, mut rx) = BB.try_split().unwrap();
+        static mut BB: BBQueue<StaticBufferProvider<QUEUE_SIZE>> = BBQueue::new_static();
+        let (mut tx, mut rx) = unsafe { BB.try_split().unwrap() };
 
         #[cfg(feature = "verbose")]
         println!("SCGM: Generating Test Data...");

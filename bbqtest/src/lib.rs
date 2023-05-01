@@ -14,7 +14,7 @@ mod tests {
 
     #[test]
     fn deref_deref_mut() {
-        let bb: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+        let mut bb: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
         let (mut prod, mut cons) = bb.try_split().unwrap();
 
         let mut wgr = prod.grant_exact(1).unwrap();
@@ -37,10 +37,10 @@ mod tests {
     #[test]
     fn static_allocator() {
         // Check we can make multiple static items...
-        static BBQ1: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
-        static BBQ2: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
-        let (mut prod1, mut cons1) = BBQ1.try_split().unwrap();
-        let (mut _prod2, mut cons2) = BBQ2.try_split().unwrap();
+        static mut BBQ1: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+        static mut BBQ2: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+        let (mut prod1, mut cons1) = unsafe { BBQ1.try_split().unwrap() };
+        let (mut _prod2, mut cons2) = unsafe { BBQ2.try_split().unwrap() };
 
         // ... and they aren't the same
         let mut wgr1 = prod1.grant_exact(3).unwrap();
@@ -60,8 +60,8 @@ mod tests {
         // Check we can make multiple static items...
         let mut buf1 = [0; 6];
         let mut buf2 = [0; 6];
-        let bqq1 = BBQueue::new_from_slice(&mut buf1);
-        let bbq2 = BBQueue::new_from_slice(&mut buf2);
+        let mut bqq1 = BBQueue::new_from_slice(&mut buf1);
+        let mut bbq2 = BBQueue::new_from_slice(&mut buf2);
         let (mut prod1, mut cons1) = bqq1.try_split().unwrap();
         let (mut _prod2, mut cons2) = bbq2.try_split().unwrap();
 
@@ -81,45 +81,47 @@ mod tests {
     #[test]
     fn release() {
         // Check we can make multiple static items...
-        static BBQ1: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
-        static BBQ2: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
-        let (prod1, cons1) = BBQ1.try_split().unwrap();
-        let (prod2, cons2) = BBQ2.try_split().unwrap();
+        static mut BBQ1: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+        static mut BBQ2: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+        unsafe {
+            let (prod1, cons1) = BBQ1.try_split().unwrap();
+            let (prod2, cons2) = BBQ2.try_split().unwrap();
 
-        // We cannot release with the wrong prod/cons
-        let (prod2, cons2) = BBQ1.try_release(prod2, cons2).unwrap_err();
-        let (prod1, cons1) = BBQ2.try_release(prod1, cons1).unwrap_err();
+            // We cannot release with the wrong prod/cons
+            let (prod2, cons2) = BBQ1.try_release(prod2, cons2).unwrap_err();
+            let (prod1, cons1) = BBQ2.try_release(prod1, cons1).unwrap_err();
 
-        // We cannot release with the wrong consumer...
-        let (prod1, cons2) = BBQ1.try_release(prod1, cons2).unwrap_err();
+            // We cannot release with the wrong consumer...
+            let (prod1, cons2) = BBQ1.try_release(prod1, cons2).unwrap_err();
 
-        // ...or the wrong producer
-        let (prod2, cons1) = BBQ1.try_release(prod2, cons1).unwrap_err();
+            // ...or the wrong producer
+            let (prod2, cons1) = BBQ1.try_release(prod2, cons1).unwrap_err();
 
-        // We cannot release with a write grant in progress
-        let mut prod1 = prod1;
-        let wgr1 = prod1.grant_exact(3).unwrap();
-        let (prod1, mut cons1) = BBQ1.try_release(prod1, cons1).unwrap_err();
+            // We cannot release with a write grant in progress
+            let mut prod1 = prod1;
+            let wgr1 = prod1.grant_exact(3).unwrap();
+            let (prod1, mut cons1) = BBQ1.try_release(prod1, cons1).unwrap_err();
 
-        // We cannot release with a read grant in progress
-        wgr1.commit(3);
-        let rgr1 = cons1.read().unwrap();
-        let (prod1, cons1) = BBQ1.try_release(prod1, cons1).unwrap_err();
+            // We cannot release with a read grant in progress
+            wgr1.commit(3);
+            let rgr1 = cons1.read().unwrap();
+            let (prod1, cons1) = BBQ1.try_release(prod1, cons1).unwrap_err();
 
-        // But we can when everything is resolved
-        rgr1.release(3);
-        assert!(BBQ1.try_release(prod1, cons1).is_ok());
-        assert!(BBQ2.try_release(prod2, cons2).is_ok());
+            // But we can when everything is resolved
+            rgr1.release(3);
+            assert!(BBQ1.try_release(prod1, cons1).is_ok());
+            assert!(BBQ2.try_release(prod2, cons2).is_ok());
 
-        // And we can re-split on-demand
-        let _ = BBQ1.try_split().unwrap();
-        let _ = BBQ2.try_split().unwrap();
+            // And we can re-split on-demand
+            let _ = BBQ1.try_split().unwrap();
+            let _ = BBQ2.try_split().unwrap();
+        }
     }
 
     #[test]
     fn direct_usage_sanity() {
         // Initialize
-        let bb: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+        let mut bb: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
         let (mut prod, mut cons) = bb.try_split().unwrap();
         assert_eq!(cons.read(), Err(BBQError::InsufficientSize));
 
@@ -204,7 +206,7 @@ mod tests {
 
     #[test]
     fn zero_sized_grant() {
-        let bb: BBQueue<StaticBufferProvider<1000>> = BBQueue::new_static();
+        let mut bb: BBQueue<StaticBufferProvider<1000>> = BBQueue::new_static();
         let (mut prod, mut _cons) = bb.try_split().unwrap();
 
         let size = 1000;
@@ -217,7 +219,7 @@ mod tests {
 
     #[test]
     fn frame_sanity() {
-        let bb: BBQueue<StaticBufferProvider<1000>> = BBQueue::new_static();
+        let mut bb: BBQueue<StaticBufferProvider<1000>> = BBQueue::new_static();
         let (mut prod, mut cons) = bb.try_split_framed().unwrap();
 
         // One frame in, one frame out
@@ -264,7 +266,7 @@ mod tests {
 
     #[test]
     fn frame_wrap() {
-        let bb: BBQueue<StaticBufferProvider<22>> = BBQueue::new_static();
+        let mut bb: BBQueue<StaticBufferProvider<22>> = BBQueue::new_static();
         let (mut prod, mut cons) = bb.try_split_framed().unwrap();
 
         // 10 + 1 used
@@ -330,7 +332,7 @@ mod tests {
 
     #[test]
     fn frame_big_little() {
-        let bb: BBQueue<StaticBufferProvider<65536>> = BBQueue::new_static();
+        let mut bb: BBQueue<StaticBufferProvider<65536>> = BBQueue::new_static();
         let (mut prod, mut cons) = bb.try_split_framed().unwrap();
 
         // Create a frame that should take 3 bytes for the header
@@ -354,7 +356,7 @@ mod tests {
 
     #[test]
     fn split_sanity_check() {
-        let bb: BBQueue<StaticBufferProvider<10>> = BBQueue::new_static();
+        let mut bb: BBQueue<StaticBufferProvider<10>> = BBQueue::new_static();
         let (mut prod, mut cons) = bb.try_split().unwrap();
 
         // Fill buffer
@@ -423,7 +425,7 @@ mod tests {
 
     #[test]
     fn split_read_sanity_check() {
-        let bb: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+        let mut bb: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
         let (mut prod, mut cons) = bb.try_split().unwrap();
 
         const ITERS: usize = 100000;
