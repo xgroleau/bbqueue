@@ -1009,7 +1009,6 @@ where
         // Allow subsequent grants
         inner.write_in_progress.store(false, Release);
 
-        // bbq.as_mut().read_waker.wake();
         unsafe {
             self.bbq.as_mut().read_waker.wake();
         };
