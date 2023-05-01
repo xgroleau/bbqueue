@@ -23,7 +23,7 @@
 //! # use bbqueue::{BBQueue, StaticBufferProvider};
 //! #
 //! // Create a buffer with six elements
-//! let bb: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+//! let mut bb: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
 //! let (mut prod, mut cons) = bb.try_split().unwrap();
 //!
 //! // Request space for one byte
@@ -52,7 +52,7 @@
 //! # use bbqueue::{BBQueue, StaticBufferProvider};
 //! #
 //! // Create a ststic buffer with six elements
-//! static BB: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+//! static mut BB: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
 //!
 //! fn main() {
 //!     // Split the bbqueue into producer and consumer halves.
@@ -93,7 +93,7 @@
 //! fn main() {
 //!     // Create a buffer with the user provided memory
 //!     let mut buf = [0; 6];
-//!     let bb = BBQueue::new_from_slice(&mut buf);
+//!     let mut bb = BBQueue::new_from_slice(&mut buf);
 //!     // Split the bbqueue into producer and consumer halves.
 //!     // These halves can be sent to different threads or to
 //!     // an interrupt handler for thread safe SPSC usage

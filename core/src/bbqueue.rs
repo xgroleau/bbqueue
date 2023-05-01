@@ -95,7 +95,7 @@ where
     /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
     /// // Create and split a new buffer
-    /// let buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+    /// let mut buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
     /// let (prod, cons) = buffer.try_split().unwrap();
     ///
     /// // Not possible to split twice
@@ -108,7 +108,7 @@ where
     /// # bbqtest();
     /// # }
     /// ```
-    pub fn try_split(&'a self) -> Result<(Producer<'a, B>, Consumer<'a, B>)> {
+    pub fn try_split(&'a mut self) -> Result<(Producer<'a, B>, Consumer<'a, B>)> {
         if atomic::swap(&self.already_split, true, AcqRel) {
             return Err(Error::AlreadySplit);
         }
@@ -120,8 +120,8 @@ where
             let mu_ptr = (&mut *self.buf.get()).buf();
             (*mu_ptr).as_mut_ptr().write_bytes(0u8, 1);
 
-            let nn1 = NonNull::new_unchecked(self as *const _ as *mut _);
-            let nn2 = NonNull::new_unchecked(self as *const _ as *mut _);
+            let nn1 = NonNull::new_unchecked(self as *mut _);
+            let nn2 = NonNull::new_unchecked(self as *mut _);
 
             Ok((
                 Producer {
@@ -148,7 +148,7 @@ where
     ///
     /// NOTE:  If the `thumbv6` feature is selected, this function takes a short critical
     /// section while splitting.
-    pub fn try_split_framed(&'a self) -> Result<(FrameProducer<'a, B>, FrameConsumer<'a, B>)> {
+    pub fn try_split_framed(&'a mut self) -> Result<(FrameProducer<'a, B>, FrameConsumer<'a, B>)> {
         let (producer, consumer) = self.try_split()?;
         Ok((FrameProducer { producer }, FrameConsumer { consumer }))
     }
@@ -167,7 +167,7 @@ where
     /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
     /// // Create and split a new buffer
-    /// let buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+    /// let mut buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
     /// let (prod, cons) = buffer.try_split().unwrap();
     ///
     /// // Not possible to split twice
@@ -260,7 +260,7 @@ where
     ///
     /// fn main() {
     ///    let provider = StaticBufferProvider::<6>::new();
-    ///    let buf = BBQueue::new(provider);
+    ///    let mut buf = BBQueue::new(provider);
     ///    let (prod, cons) = buf.try_split().unwrap();
     /// }
     /// ```
@@ -316,7 +316,7 @@ impl<const N: usize> BBQueue<StaticBufferProvider<N>> {
     /// ```rust,no_run
     /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
-    /// static BUF: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+    /// static mut BUF: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
     ///
     /// fn main() {
     ///    let (prod, cons) = BUF.try_split().unwrap();
@@ -376,7 +376,7 @@ impl<'a> BBQueue<SliceBufferProvider<'a>> {
     ///
     /// fn main() {
     ///    let mut bb_memory = [0; 6];
-    ///    let buf = BBQueue::new_from_slice(&mut bb_memory);
+    ///    let mut buf = BBQueue::new_from_slice(&mut bb_memory);
     ///    let (prod, cons) = buf.try_split().unwrap();
     /// }
     /// ```
@@ -528,7 +528,7 @@ where
     /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
     /// // Create and split a new buffer of 6 elements
-    /// let buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+    /// let mut buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
     /// let (mut prod, mut cons) = buffer.try_split().unwrap();
     ///
     /// // Successfully obtain and commit a grant of four bytes
@@ -669,7 +669,7 @@ where
     /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
     /// // Create and split a new buffer of 6 elements
-    /// let buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+    /// let mut buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
     /// let (mut prod, mut cons) = buffer.try_split().unwrap();
     ///
     /// // Successfully obtain and commit a grant of four bytes
@@ -820,7 +820,7 @@ where
     /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
     /// // Create a new buffer of 6 elements
-    /// let buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+    /// let mut buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
     /// assert_eq!(buffer.capacity(), 6);
     /// # // bbqueue test shim!
     /// # }
@@ -923,7 +923,7 @@ where
     /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
     /// // Create and split a new buffer of 6 elements
-    /// let buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+    /// let mut buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
     /// let (mut prod, mut cons) = buffer.try_split().unwrap();
     ///
     /// // Successfully obtain and commit a grant of four bytes
@@ -1009,9 +1009,9 @@ where
         // Allow subsequent grants
         inner.write_in_progress.store(false, Release);
 
-        unsafe {
-            self.bbq.as_mut().read_waker.wake();
-        };
+        // unsafe {
+        //     self.bbq.as_mut().read_waker.wake();
+        // };
     }
 
     /// Configures the amount of bytes to be commited on drop.
@@ -1055,7 +1055,7 @@ where
     /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
     /// // Create and split a new buffer of 6 elements
-    /// let buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+    /// let mut buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
     /// let (mut prod, mut cons) = buffer.try_split().unwrap();
     ///
     /// // Successfully obtain and commit a grant of four bytes
@@ -1158,7 +1158,7 @@ where
     /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
     /// // Create and split a new buffer of 6 elements
-    /// let buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+    /// let mut buffer: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
     /// let (mut prod, mut cons) = buffer.try_split().unwrap();
     ///
     /// // Successfully obtain and commit a grant of four bytes

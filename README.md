@@ -25,7 +25,7 @@ block of contiguous memory, which can be filled (or emptied) by a DMA engine.
 # use bbqueue::{BBQueue, StaticBufferProvider};
 #
 // Create a buffer with six elements
-let bb: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+let mut bb: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
 let (mut prod, mut cons) = bb.try_split().unwrap();
 
 // Request space for one byte
@@ -54,7 +54,7 @@ rgr.release(1);
 # use bbqueue::{BBQueue, StaticBufferProvider};
 #
 // Create a ststic buffer with six elements
-static BB: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+static mut BB: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
 
 fn main() {
     // Split the bbqueue into producer and consumer halves.
