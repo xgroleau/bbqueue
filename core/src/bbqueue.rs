@@ -1014,9 +1014,10 @@ where
         // Allow subsequent grants
         inner.write_in_progress.store(false, Release);
 
-        // unsafe {
-        //     self.bbq.as_mut().read_waker.wake();
-        // };
+        // bbq.as_mut().read_waker.wake();
+        unsafe {
+            self.bbq.as_mut().read_waker.wake();
+        };
     }
 
     /// Configures the amount of bytes to be commited on drop.
