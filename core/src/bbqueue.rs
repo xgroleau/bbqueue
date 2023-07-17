@@ -1,4 +1,4 @@
-use futures::task::AtomicWaker;
+use futures_core::task::__internal::AtomicWaker;
 
 use crate::{
     framed::{FrameConsumer, FrameProducer},
