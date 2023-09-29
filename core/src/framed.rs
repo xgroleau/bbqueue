@@ -70,7 +70,7 @@
 //! | (2^56)..(2^64)        | 9                    |
 //!
 
-use crate::{BufferProvider, Consumer, GrantR, GrantW, Producer};
+use crate::{StorageProvider, Consumer, GrantR, GrantW, Producer};
 
 use crate::{
     vusize::{decode_usize, decoded_len, encode_usize_to_slice, encoded_len},
@@ -85,14 +85,14 @@ use core::{
 /// A producer of Framed data
 pub struct FrameProducer<'a, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     pub(crate) producer: Producer<'a, B>,
 }
 
 impl<'a, B> FrameProducer<'a, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     /// Receive a grant for a frame with a maximum size of `max_sz` in bytes.
     ///
@@ -119,14 +119,14 @@ where
 /// A consumer of Framed data
 pub struct FrameConsumer<'a, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     pub(crate) consumer: Consumer<'a, B>,
 }
 
 impl<'a, B> FrameConsumer<'a, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     /// Obtain the next available frame, if any
     pub fn read(&mut self) -> Option<FrameGrantR<'a, B>> {
@@ -189,7 +189,7 @@ where
 #[derive(Debug, PartialEq)]
 pub struct FrameGrantW<'a, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     grant_w: GrantW<'a, B>,
     hdr_len: u8,
@@ -202,7 +202,7 @@ where
 #[derive(Debug, PartialEq)]
 pub struct FrameGrantR<'a, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     grant_r: GrantR<'a, B>,
     hdr_len: u8,
@@ -210,7 +210,7 @@ where
 
 impl<'a, B> Deref for FrameGrantW<'a, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     type Target = [u8];
 
@@ -221,7 +221,7 @@ where
 
 impl<'a, B> DerefMut for FrameGrantW<'a, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     fn deref_mut(&mut self) -> &mut [u8] {
         &mut self.grant_w.buf[self.hdr_len.into()..]
@@ -230,7 +230,7 @@ where
 
 impl<'a, B> Deref for FrameGrantR<'a, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     type Target = [u8];
 
@@ -241,7 +241,7 @@ where
 
 impl<'a, B> DerefMut for FrameGrantR<'a, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     fn deref_mut(&mut self) -> &mut [u8] {
         &mut self.grant_r.buf[self.hdr_len.into()..]
@@ -250,7 +250,7 @@ where
 
 impl<'a, B> FrameGrantW<'a, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     /// Commit a frame to make it available to the Consumer half.
     ///
@@ -290,7 +290,7 @@ where
 
 impl<'a, B> FrameGrantR<'a, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     /// Release a frame to make the space available for future writing
     ///

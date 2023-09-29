@@ -1,10 +1,12 @@
+use core::{marker::PhantomData, ptr::NonNull};
+
 /// Trait for a buffer provider.
 /// The Buffer provider allows abstraction over the memory
 /// The memory can be statically allocated, on the heap or on the stack
-pub trait BufferProvider: PartialEq {
+pub trait StorageProvider: PartialEq {
     /// Returns a reference to the provided buffer
     /// The buffer **HAS NO GARANTEE** on it's state or initialization
-    fn buf(&mut self) -> &mut [u8];
+    fn storage(&mut self) -> NonNull<[u8]>;
 }
 
 /// A statically allocated buffer
@@ -20,27 +22,38 @@ impl<const N: usize> StaticBufferProvider<N> {
     }
 }
 
-impl<const N: usize> BufferProvider for StaticBufferProvider<N> {
-    fn buf(&mut self) -> &mut [u8] {
-        &mut self.buf
+impl<const N: usize> StorageProvider for StaticBufferProvider<N> {
+    fn storage(&mut self) -> NonNull<[u8]> {
+        let len = self.buf.len();
+        let ptr = self.buf.as_mut_ptr();
+        let nn = NonNull::new(ptr).unwrap();
+        NonNull::slice_from_raw_parts(nn, len)
     }
 }
 
 /// A buffer allocated from userspace
 #[derive(Debug, PartialEq)]
 pub struct SliceBufferProvider<'a> {
-    buf: &'a mut [u8],
+    nn: NonNull<[u8]>,
+    phantom: PhantomData<&'a mut [u8]>,
 }
 
 impl<'a> SliceBufferProvider<'a> {
     /// Creates a new BufferProvided from a userspace memory
     pub fn new(buf: &'a mut [u8]) -> Self {
-        Self { buf }
+        let len = buf.len();
+        let ptr = buf.as_mut_ptr();
+
+        let nn = NonNull::new(ptr).unwrap();
+        Self {
+            nn: NonNull::slice_from_raw_parts(nn, len),
+            phantom: PhantomData,
+        }
     }
 }
 
-impl BufferProvider for SliceBufferProvider<'_> {
-    fn buf(&mut self) -> &mut [u8] {
-        &mut self.buf
+impl StorageProvider for SliceBufferProvider<'_> {
+    fn storage(&mut self) -> NonNull<[u8]> {
+        self.nn
     }
 }
