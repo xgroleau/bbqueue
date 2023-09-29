@@ -28,46 +28,46 @@ pub struct BBQueue<B>
 where
     B: StorageProvider,
 {
-    /// The buffer provider
+    // The buffer provider
     buf: UnsafeCell<B>,
 
-    /// Max capacity of the buffer
+    // Max capacity of the buffer
     capacity: usize,
 
-    /// Where the next byte will be written
+    // Where the next byte will be written
     write: AtomicUsize,
 
-    /// Where the next byte will be read from
+    // Where the next byte will be read from
     read: AtomicUsize,
 
-    /// Used in the inverted case to mark the end of the
-    /// readable streak. Otherwise will == sizeof::<self.buf>().
-    /// Writer is responsible for placing this at the correct
-    /// place when entering an inverted condition, and Reader
-    /// is responsible for moving it back to sizeof::<self.buf>()
-    /// when exiting the inverted condition
+    // Used in the inverted case to mark the end of the
+    // readable streak. Otherwise will == sizeof::<self.buf>().
+    // Writer is responsible for placing this at the correct
+    // place when entering an inverted condition, and Reader
+    // is responsible for moving it back to sizeof::<self.buf>()
+    // when exiting the inverted condition
     last: AtomicUsize,
 
-    /// Used by the Writer to remember what bytes are currently
-    /// allowed to be written to, but are not yet ready to be
-    /// read from
+    // Used by the Writer to remember what bytes are currently
+    // allowed to be written to, but are not yet ready to be
+    // read from
     reserve: AtomicUsize,
 
-    /// Is there an active read grant?
+    // Is there an active read grant?
     read_in_progress: AtomicBool,
 
-    /// Is there an active write grant?
+    // Is there an active write grant?
     write_in_progress: AtomicBool,
 
-    /// Have we already split?
+    // Have we already split?
     already_split: AtomicBool,
 
-    /// Read waker for async support
-    /// Woken up when a commit is done
+    // Read waker for async support
+    // Woken up when a commit is done
     read_waker: WakerStorage,
 
-    /// Write waker for async support
-    /// Woken up when a release is done
+    // Write waker for async support
+    // Woken up when a release is done
     write_waker: WakerStorage,
 }
 
@@ -271,41 +271,41 @@ where
             // This will not be initialized until we split the buffer
             buf: UnsafeCell::new(buf),
 
-            /// Owned by the writer
+            // Owned by the writer
             write: AtomicUsize::new(0),
 
-            /// Owned by the reader
+            // Owned by the reader
             read: AtomicUsize::new(0),
 
-            /// Cooperatively owned
-            ///
-            /// NOTE: This should generally be initialized as size_of::<self.buf>(), however
-            /// this would prevent the structure from being entirely zero-initialized,
-            /// and can cause the .data section to be much larger than necessary. By
-            /// forcing the `last` pointer to be zero initially, we place the structure
-            /// in an "inverted" condition, which will be resolved on the first commited
-            /// bytes that are written to the structure.
-            ///
-            /// When read == last == write, no bytes will be allowed to be read (good), but
-            /// write grants can be given out (also good).
+            // Cooperatively owned
+            //
+            // NOTE: This should generally be initialized as size_of::<self.buf>(), however
+            // this would prevent the structure from being entirely zero-initialized,
+            // and can cause the .data section to be much larger than necessary. By
+            // forcing the `last` pointer to be zero initially, we place the structure
+            // in an "inverted" condition, which will be resolved on the first commited
+            // bytes that are written to the structure.
+            //
+            // When read == last == write, no bytes will be allowed to be read (good), but
+            // write grants can be given out (also good).
             last: AtomicUsize::new(0),
 
-            /// Owned by the Writer, "private"
+            // Owned by the Writer, "private"
             reserve: AtomicUsize::new(0),
 
-            /// Owned by the Reader, "private"
+            // Owned by the Reader, "private"
             read_in_progress: AtomicBool::new(false),
 
-            /// Owned by the Writer, "private"
+            // Owned by the Writer, "private"
             write_in_progress: AtomicBool::new(false),
 
-            /// We haven't split at the start
+            // We haven't split at the start
             already_split: AtomicBool::new(false),
 
-            /// Shared between reader and writer.
+            // Shared between reader and writer.
             read_waker: WakerStorage::new(),
 
-            /// Shared between reader and writer
+            // Shared between reader and writer
             write_waker: WakerStorage::new(),
         }
     }
@@ -329,41 +329,41 @@ impl<const N: usize> BBQueue<StaticBufferProvider<N>> {
             // This will not be initialized until we split the buffer
             buf: UnsafeCell::new(StaticBufferProvider::new()),
 
-            /// Owned by the writer
+            // Owned by the writer
             write: AtomicUsize::new(0),
 
-            /// Owned by the reader
+            // Owned by the reader
             read: AtomicUsize::new(0),
 
-            /// Cooperatively owned
-            ///
-            /// NOTE: This should generally be initialized as size_of::<self.buf>(), however
-            /// this would prevent the structure from being entirely zero-initialized,
-            /// and can cause the .data section to be much larger than necessary. By
-            /// forcing the `last` pointer to be zero initially, we place the structure
-            /// in an "inverted" condition, which will be resolved on the first commited
-            /// bytes that are written to the structure.
-            ///
-            /// When read == last == write, no bytes will be allowed to be read (good), but
-            /// write grants can be given out (also good).
+            // Cooperatively owned
+            //
+            // NOTE: This should generally be initialized as size_of::<self.buf>(), however
+            // this would prevent the structure from being entirely zero-initialized,
+            // and can cause the .data section to be much larger than necessary. By
+            // forcing the `last` pointer to be zero initially, we place the structure
+            // in an "inverted" condition, which will be resolved on the first commited
+            // bytes that are written to the structure.
+            //
+            // When read == last == write, no bytes will be allowed to be read (good), but
+            // write grants can be given out (also good).
             last: AtomicUsize::new(0),
 
-            /// Owned by the Writer, "private"
+            // Owned by the Writer, "private"
             reserve: AtomicUsize::new(0),
 
-            /// Owned by the Reader, "private"
+            // Owned by the Reader, "private"
             read_in_progress: AtomicBool::new(false),
 
-            /// Owned by the Writer, "private"
+            // Owned by the Writer, "private"
             write_in_progress: AtomicBool::new(false),
 
-            /// We haven't split at the start
+            // We haven't split at the start
             already_split: AtomicBool::new(false),
 
-            /// Shared between reader and writer.
+            // Shared between reader and writer.
             read_waker: WakerStorage::new(),
 
-            /// Shared between reader and writer
+            // Shared between reader and writer
             write_waker: WakerStorage::new(),
         }
     }
