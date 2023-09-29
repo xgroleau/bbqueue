@@ -2,12 +2,12 @@
 mod tests {
 
     use bbqueue::{
-        BBQueue, BufferProvider, Consumer, GrantR, GrantW, Producer, StaticBufferProvider,
+        BBQueue, Consumer, GrantR, GrantW, Producer, StaticBufferProvider, StorageProvider,
     };
 
     enum Potato<'a, B>
     where
-        B: BufferProvider,
+        B: StorageProvider,
     {
         Tx((Producer<'a, B>, u8)),
         Rx((Consumer<'a, B>, u8)),
@@ -30,7 +30,7 @@ mod tests {
 
     impl<'a, B> Potato<'a, B>
     where
-        B: BufferProvider,
+        B: StorageProvider,
     {
         fn work(self) -> (Self, Self) {
             match self {

@@ -1,7 +1,7 @@
 use crate::{
     framed::{FrameConsumer, FrameProducer},
     waker::WakerStorage,
-    BufferProvider, Error, Result, SliceBufferProvider, StaticBufferProvider,
+    Error, Result, SliceBufferProvider, StaticBufferProvider, StorageProvider,
 };
 use core::{
     cell::UnsafeCell,
@@ -26,7 +26,7 @@ use core::{
 /// a BBQueue or a split Producer/Consumer pair
 pub struct BBQueue<B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     /// The buffer provider
     buf: UnsafeCell<B>,
@@ -71,11 +71,11 @@ where
     write_waker: WakerStorage,
 }
 
-unsafe impl<B> Sync for BBQueue<B> where B: BufferProvider {}
+unsafe impl<B> Sync for BBQueue<B> where B: StorageProvider {}
 
 impl<'a, B> BBQueue<B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     /// Attempt to split the `BBQueue` into `Consumer` and `Producer` halves to gain access to the
     /// buffer. If buffer has already been split, an error will be returned.
@@ -117,7 +117,7 @@ where
             // Explicitly zero the data to avoid undefined behavior.
             // This is required, because we hand out references to the buffers,
             // which mean that creating them as references is technically UB for now
-            let mu_ptr = (&mut *self.buf.get()).buf();
+            let mu_ptr = (&mut *self.buf.get()).storage().as_mut();
             (*mu_ptr).as_mut_ptr().write_bytes(0u8, 1);
 
             let nn1 = NonNull::new_unchecked(self as *mut _);
@@ -250,7 +250,7 @@ where
 
 impl<B> BBQueue<B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     /// Create a new BBQueue with abstraction over the memory provider
     ///
@@ -266,7 +266,7 @@ where
     /// ```
     pub fn new(mut buf: B) -> Self {
         Self {
-            capacity: buf.buf().len(),
+            capacity: unsafe { buf.storage().as_ref().len() },
 
             // This will not be initialized until we split the buffer
             buf: UnsafeCell::new(buf),
@@ -411,17 +411,17 @@ impl<'a> BBQueue<SliceBufferProvider<'a>> {
 /// discussion of grant methods that could be added in the future.
 pub struct Producer<'a, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     bbq: NonNull<BBQueue<B>>,
     pd: PhantomData<&'a ()>,
 }
 
-unsafe impl<'a, B> Send for Producer<'a, B> where B: BufferProvider {}
+unsafe impl<'a, B> Send for Producer<'a, B> where B: StorageProvider {}
 
 impl<'a, B> Producer<'a, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     /// Request a writable, contiguous section of memory of exactly
     /// `sz` bytes. If the buffer size requested is not available,
@@ -504,7 +504,14 @@ where
 
         // This is sound, as UnsafeCell, MaybeUninit, and GenericArray
         // are all `#[repr(Transparent)]
-        let start_of_buf_ptr = unsafe { (&mut *inner.buf.get()).buf().as_mut_ptr().cast::<u8>() };
+        let start_of_buf_ptr = unsafe {
+            (&mut *inner.buf.get())
+                .storage()
+                .as_mut()
+                .as_mut_ptr()
+                .cast::<u8>()
+        };
+        // let start_of_buf_ptr = unsafe { (&mut *inner.buf.get()).buf().as_mut_ptr().cast::<u8>() };
         let grant_slice =
             unsafe { from_raw_parts_mut(start_of_buf_ptr.offset(start as isize), sz) };
 
@@ -608,7 +615,14 @@ where
 
         // This is sound, as UnsafeCell, MaybeUninit, and GenericArray
         // are all `#[repr(Transparent)]
-        let start_of_buf_ptr = unsafe { (&mut *inner.buf.get()).buf().as_mut_ptr().cast::<u8>() };
+        let start_of_buf_ptr = unsafe {
+            (&mut *inner.buf.get())
+                .storage()
+                .as_mut()
+                .as_mut_ptr()
+                .cast::<u8>()
+        };
+        // let start_of_buf_ptr = unsafe { (&mut *inner.buf.get()).buf().as_mut_ptr().cast::<u8>() };
         let grant_slice =
             unsafe { from_raw_parts_mut(start_of_buf_ptr.offset(start as isize), sz) };
 
@@ -648,17 +662,17 @@ where
 /// `Consumer` is the primary interface for reading data from a `BBQueue`.
 pub struct Consumer<'a, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     bbq: NonNull<BBQueue<B>>,
     pd: PhantomData<&'a ()>,
 }
 
-unsafe impl<'a, B> Send for Consumer<'a, B> where B: BufferProvider {}
+unsafe impl<'a, B> Send for Consumer<'a, B> where B: StorageProvider {}
 
 impl<'a, B> Consumer<'a, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     /// Obtains a contiguous slice of committed bytes. This slice may not
     /// contain ALL available bytes, if the writer has wrapped around. The
@@ -730,7 +744,14 @@ where
 
         // This is sound, as UnsafeCell, MaybeUninit, and GenericArray
         // are all `#[repr(Transparent)]
-        let start_of_buf_ptr = unsafe { (&mut *inner.buf.get()).buf().as_mut_ptr().cast::<u8>() };
+        let start_of_buf_ptr = unsafe {
+            (&mut *inner.buf.get())
+                .storage()
+                .as_mut()
+                .as_mut_ptr()
+                .cast::<u8>()
+        };
+        // let start_of_buf_ptr = unsafe { (&mut *inner.buf.get()).buf().as_mut_ptr().cast::<u8>() };
         let grant_slice = unsafe { from_raw_parts_mut(start_of_buf_ptr.offset(read as isize), sz) };
 
         Ok(GrantR {
@@ -783,7 +804,14 @@ where
 
         // This is sound, as UnsafeCell, MaybeUninit, and GenericArray
         // are all `#[repr(Transparent)]
-        let start_of_buf_ptr = unsafe { (&mut *inner.buf.get()).buf().as_mut_ptr().cast::<u8>() };
+        let start_of_buf_ptr = unsafe {
+            (&mut *inner.buf.get())
+                .storage()
+                .as_mut()
+                .as_mut_ptr()
+                .cast::<u8>()
+        };
+        // let start_of_buf_ptr = unsafe { (&mut *inner.buf.get()).buf().as_mut_ptr().cast::<u8>() };
         let grant_slice1 =
             unsafe { from_raw_parts_mut(start_of_buf_ptr.offset(read as isize), sz1) };
         let grant_slice2 = unsafe { from_raw_parts_mut(start_of_buf_ptr, sz2) };
@@ -812,7 +840,7 @@ where
 
 impl<B> BBQueue<B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     /// Returns the size of the backing storage.
     ///
@@ -852,14 +880,15 @@ where
 #[derive(Debug, PartialEq)]
 pub struct GrantW<'a, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
+{
     pub(crate) buf: NonNull<[u8]>,
     bbq: NonNull<BBQueue<B>>,
     pub(crate) to_commit: usize,
     phatom: PhantomData<&'a mut [u8]>,
 }
 
-unsafe impl<'a, B> Send for GrantW<'a, B> where B: BufferProvider {}
+unsafe impl<'a, B> Send for GrantW<'a, B> where B: StorageProvider {}
 
 /// A structure representing a contiguous region of memory that
 /// may be read from, and potentially "released" (or cleared)
@@ -876,7 +905,8 @@ unsafe impl<'a, B> Send for GrantW<'a, B> where B: BufferProvider {}
 #[derive(Debug, PartialEq)]
 pub struct GrantR<'a, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
+{
     pub(crate) buf: NonNull<[u8]>,
     bbq: NonNull<BBQueue<B>>,
     pub(crate) to_release: usize,
@@ -889,7 +919,7 @@ where
 #[derive(Debug, PartialEq)]
 pub struct SplitGrantR<'a, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     pub(crate) buf1: NonNull<[u8]>,
     pub(crate) buf2: NonNull<[u8]>,
@@ -898,13 +928,13 @@ where
     phatom: PhantomData<&'a mut [u8]>,
 }
 
-unsafe impl<'a, B> Send for GrantR<'a, B> where B: BufferProvider {}
+unsafe impl<'a, B> Send for GrantR<'a, B> where B: StorageProvider {}
 
-unsafe impl<'a, B> Send for SplitGrantR<'a, B> where B: BufferProvider {}
+unsafe impl<'a, B> Send for SplitGrantR<'a, B> where B: StorageProvider {}
 
 impl<'a, B> GrantW<'a, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     /// Finalizes a writable grant given by `grant()` or `grant_max()`.
     /// This makes the data available to be read via `read()`. This consumes
@@ -1027,7 +1057,7 @@ where
 
 impl<'a, B> GrantR<'a, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     /// Release a sequence of bytes from the buffer, allowing the space
     /// to be used by later writes. This consumes the grant.
@@ -1137,7 +1167,7 @@ where
 
 impl<'a, B> SplitGrantR<'a, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     /// Release a sequence of bytes from the buffer, allowing the space
     /// to be used by later writes. This consumes the grant.
@@ -1238,7 +1268,7 @@ where
 
 impl<'a, B> Drop for GrantW<'a, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     fn drop(&mut self) {
         self.commit_inner(self.to_commit)
@@ -1247,7 +1277,7 @@ where
 
 impl<'a, B> Drop for GrantR<'a, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     fn drop(&mut self) {
         self.release_inner(self.to_release)
@@ -1256,7 +1286,7 @@ where
 
 impl<'a, B> Drop for SplitGrantR<'a, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     fn drop(&mut self) {
         self.release_inner(self.to_release)
@@ -1265,7 +1295,7 @@ where
 
 impl<'a, B> Deref for GrantW<'a, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     type Target = [u8];
 
@@ -1276,7 +1306,7 @@ where
 
 impl<'a, B> DerefMut for GrantW<'a, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     fn deref_mut(&mut self) -> &mut [u8] {
         self.buf()
@@ -1285,7 +1315,7 @@ where
 
 impl<'a, B> Deref for GrantR<'a, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     type Target = [u8];
 
@@ -1296,7 +1326,7 @@ where
 
 impl<'a, B> DerefMut for GrantR<'a, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     fn deref_mut(&mut self) -> &mut [u8] {
         self.buf_mut()
@@ -1306,7 +1336,7 @@ where
 /// Future returned [Producer::grant_exact_async]
 pub struct GrantExactFuture<'a, 'b, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     prod: &'b mut Producer<'a, B>,
     sz: usize,
@@ -1314,7 +1344,7 @@ where
 
 impl<'a, 'b, B> Future for GrantExactFuture<'a, 'b, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     type Output = Result<GrantW<'a, B>>;
 
@@ -1351,7 +1381,7 @@ where
 /// Future returned [Producer::grant_max_remaining_async]
 pub struct GrantMaxRemainingFuture<'a, 'b, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     prod: &'b mut Producer<'a, B>,
     sz: usize,
@@ -1359,7 +1389,7 @@ where
 
 impl<'a, 'b, B> Future for GrantMaxRemainingFuture<'a, 'b, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     type Output = Result<GrantW<'a, B>>;
 
@@ -1382,14 +1412,14 @@ where
 /// Future returned [Consumer::read_async]
 pub struct GrantReadFuture<'a, 'b, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     cons: &'b mut Consumer<'a, B>,
 }
 
 impl<'a, 'b, B> Future for GrantReadFuture<'a, 'b, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     type Output = Result<GrantR<'a, B>>;
 
@@ -1410,14 +1440,14 @@ where
 /// Future returned [Consumer::split_read_async]
 pub struct GrantSplitReadFuture<'a, 'b, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     cons: &'b mut Consumer<'a, B>,
 }
 
 impl<'a, 'b, B> Future for GrantSplitReadFuture<'a, 'b, B>
 where
-    B: BufferProvider,
+    B: StorageProvider,
 {
     type Output = Result<SplitGrantR<'a, B>>;
 
