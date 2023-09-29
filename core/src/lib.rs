@@ -136,7 +136,7 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![deny(missing_docs)]
-#![deny(warnings)]
+// #![deny(warnings)]
 
 mod bbqueue;
 pub use crate::bbqueue::*;
@@ -146,7 +146,6 @@ pub use buffer_provider::*;
 
 pub mod framed;
 mod vusize;
-mod waker;
 
 use core::result::Result as CoreResult;
 

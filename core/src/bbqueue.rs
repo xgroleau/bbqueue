@@ -1,6 +1,7 @@
+use atomic_waker::AtomicWaker;
+
 use crate::{
     framed::{FrameConsumer, FrameProducer},
-    waker::WakerStorage,
     Error, Result, SliceBufferProvider, StaticBufferProvider, StorageProvider,
 };
 use core::{
@@ -64,11 +65,11 @@ where
 
     // Read waker for async support
     // Woken up when a commit is done
-    read_waker: WakerStorage,
+    read_waker: AtomicWaker,
 
     // Write waker for async support
     // Woken up when a release is done
-    write_waker: WakerStorage,
+    write_waker: AtomicWaker,
 }
 
 unsafe impl<B> Sync for BBQueue<B> where B: StorageProvider {}
@@ -303,10 +304,10 @@ where
             already_split: AtomicBool::new(false),
 
             // Shared between reader and writer.
-            read_waker: WakerStorage::new(),
+            read_waker: AtomicWaker::new(),
 
             // Shared between reader and writer
-            write_waker: WakerStorage::new(),
+            write_waker: AtomicWaker::new(),
         }
     }
 }
@@ -361,10 +362,10 @@ impl<const N: usize> BBQueue<StaticBufferProvider<N>> {
             already_split: AtomicBool::new(false),
 
             // Shared between reader and writer.
-            read_waker: WakerStorage::new(),
+            read_waker: AtomicWaker::new(),
 
             // Shared between reader and writer
-            write_waker: WakerStorage::new(),
+            write_waker: AtomicWaker::new(),
         }
     }
 }
@@ -987,7 +988,8 @@ where
 
     #[inline(always)]
     pub(crate) fn commit_inner(&mut self, used: usize) {
-        let inner = unsafe { &self.bbq.as_ref() };
+        let len = self.buf.len();
+        let inner = unsafe { &mut self.bbq.as_ref() };
 
         // If there is no grant in progress, return early. This
         // generally means we are dropping the grant within a
@@ -1000,7 +1002,6 @@ where
         // be careful writing to LAST
 
         // Saturate the grant commit
-        let len = self.buf.len();
         let used = min(len, used);
 
         let write = inner.write.load(Acquire);
@@ -1036,10 +1037,7 @@ where
 
         // Allow subsequent grants
         inner.write_in_progress.store(false, Release);
-
-        unsafe {
-            self.bbq.as_mut().read_waker.wake();
-        };
+        inner.read_waker.wake();
     }
 
     /// Configures the amount of bytes to be commited on drop.
@@ -1149,7 +1147,7 @@ where
         let _ = atomic::fetch_add(&inner.read, used, Release);
 
         inner.read_in_progress.store(false, Release);
-        unsafe { self.bbq.as_mut().write_waker.wake() };
+        unsafe { self.bbq.as_ref().write_waker.wake() };
     }
 
     /// Configures the amount of bytes to be released on drop.
@@ -1358,7 +1356,7 @@ where
             Ok(grant) => Poll::Ready(Ok(grant)),
             Err(e) => match e {
                 Error::GrantInProgress | Error::InsufficientSize => {
-                    unsafe { self.prod.bbq.as_mut().write_waker.set(cx.waker()) };
+                    unsafe { self.prod.bbq.as_ref().write_waker.register(cx.waker()) };
                     Poll::Pending
                 }
                 _ => Poll::Ready(Err(e)),
@@ -1389,7 +1387,7 @@ where
             Ok(grant) => Poll::Ready(Ok(grant)),
             Err(e) => match e {
                 Error::GrantInProgress | Error::InsufficientSize => {
-                    unsafe { self.prod.bbq.as_mut().write_waker.set(cx.waker()) };
+                    unsafe { self.prod.bbq.as_ref().write_waker.register(cx.waker()) };
                     Poll::Pending
                 }
                 _ => Poll::Ready(Err(e)),
@@ -1417,7 +1415,7 @@ where
             Ok(grant) => Poll::Ready(Ok(grant)),
             Err(e) => match e {
                 Error::InsufficientSize | Error::GrantInProgress => {
-                    unsafe { self.cons.bbq.as_mut().read_waker.set(cx.waker()) };
+                    unsafe { self.cons.bbq.as_ref().read_waker.register(cx.waker()) };
                     Poll::Pending
                 }
                 _ => Poll::Ready(Err(e)),
@@ -1445,7 +1443,7 @@ where
             Ok(grant) => Poll::Ready(Ok(grant)),
             Err(e) => match e {
                 Error::InsufficientSize | Error::GrantInProgress => {
-                    unsafe { self.cons.bbq.as_mut().read_waker.set(cx.waker()) };
+                    unsafe { self.cons.bbq.as_ref().read_waker.register(cx.waker()) };
                     Poll::Pending
                 }
                 _ => Poll::Ready(Err(e)),
