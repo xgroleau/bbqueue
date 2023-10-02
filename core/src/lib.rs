@@ -52,7 +52,7 @@
 //! # use bbqueue::{BBQueue, StaticBufferProvider};
 //! #
 //! // Create a ststic buffer with six elements
-//! static mut BB: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+//! static BB: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
 //!
 //! fn main() {
 //!     // Split the bbqueue into producer and consumer halves.

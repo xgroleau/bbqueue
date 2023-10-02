@@ -109,7 +109,7 @@ where
     /// # bbqtest();
     /// # }
     /// ```
-    pub fn try_split(&'a mut self) -> Result<(Producer<'a, B>, Consumer<'a, B>)> {
+    pub fn try_split(&'a self) -> Result<(Producer<'a, B>, Consumer<'a, B>)> {
         if atomic::swap(&self.already_split, true, AcqRel) {
             return Err(Error::AlreadySplit);
         }
@@ -121,9 +121,8 @@ where
             let mu_ptr = (&mut *self.buf.get()).storage().as_mut();
             (*mu_ptr).as_mut_ptr().write_bytes(0u8, 1);
 
-            let nn1 = NonNull::new_unchecked(self as *mut _);
-            let nn2 = NonNull::new_unchecked(self as *mut _);
-
+            let nn1 = NonNull::new_unchecked(self as *const _ as *mut _);
+            let nn2 = NonNull::new_unchecked(self as *const _ as *mut _);
             Ok((
                 Producer {
                     bbq: nn1,
@@ -317,7 +316,7 @@ impl<const N: usize> BBQueue<StaticBufferProvider<N>> {
     /// ```rust,no_run
     /// use bbqueue::{BBQueue, StaticBufferProvider};
     ///
-    /// static mut BUF: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+    /// static BUF: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
     ///
     /// fn main() {
     ///    let (prod, cons) = BUF.try_split().unwrap();
