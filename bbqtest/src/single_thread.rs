@@ -4,7 +4,7 @@ mod tests {
 
     #[test]
     fn sanity_check() {
-        let mut bb: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+        let bb: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
         let (mut prod, mut cons) = bb.try_split().unwrap();
 
         const ITERS: usize = 100000;
