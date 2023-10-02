@@ -141,8 +141,8 @@
 mod bbqueue;
 pub use crate::bbqueue::*;
 
-mod buffer_provider;
-pub use buffer_provider::*;
+mod storage_provider;
+pub use storage_provider::*;
 
 pub mod framed;
 mod vusize;
