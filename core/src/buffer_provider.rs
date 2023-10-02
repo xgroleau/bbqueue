@@ -24,10 +24,7 @@ impl<const N: usize> StaticBufferProvider<N> {
 
 impl<const N: usize> StorageProvider for StaticBufferProvider<N> {
     fn storage(&mut self) -> NonNull<[u8]> {
-        let len = self.buf.len();
-        let ptr = self.buf.as_mut_ptr();
-        let nn = NonNull::new(ptr).unwrap();
-        NonNull::slice_from_raw_parts(nn, len)
+        self.buf.as_mut_slice().into()
     }
 }
 
@@ -41,12 +38,8 @@ pub struct SliceBufferProvider<'a> {
 impl<'a> SliceBufferProvider<'a> {
     /// Creates a new BufferProvided from a userspace memory
     pub fn new(buf: &'a mut [u8]) -> Self {
-        let len = buf.len();
-        let ptr = buf.as_mut_ptr();
-
-        let nn = NonNull::new(ptr).unwrap();
         Self {
-            nn: NonNull::slice_from_raw_parts(nn, len),
+            nn: buf.into(),
             phantom: PhantomData,
         }
     }
