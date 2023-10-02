@@ -1,4 +1,4 @@
-use core::{marker::PhantomData, ptr::NonNull};
+use core::{cell::UnsafeCell, marker::PhantomData, ptr::NonNull};
 
 /// Trait for a buffer provider.
 /// The Buffer provider allows abstraction over the memory
@@ -6,25 +6,37 @@ use core::{marker::PhantomData, ptr::NonNull};
 pub trait StorageProvider: PartialEq {
     /// Returns a reference to the provided buffer
     /// The buffer **HAS NO GARANTEE** on it's state or initialization
-    fn storage(&mut self) -> NonNull<[u8]>;
+    fn storage(&self) -> NonNull<[u8]>;
 }
 
 /// A statically allocated buffer
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct StaticBufferProvider<const N: usize> {
-    buf: [u8; N],
+    buf: UnsafeCell<[u8; N]>,
+}
+
+impl<const N: usize> PartialEq for StaticBufferProvider<N> {
+    fn eq(&self, other: &Self) -> bool {
+        unsafe {
+            let r = &*self.buf.get();
+            let l = &*other.buf.get();
+            r.eq(l)
+        }
+    }
 }
 
 impl<const N: usize> StaticBufferProvider<N> {
     /// A buffer with internal allocation
     pub const fn new() -> Self {
-        Self { buf: [0; N] }
+        Self {
+            buf: UnsafeCell::new([0; N]),
+        }
     }
 }
 
 impl<const N: usize> StorageProvider for StaticBufferProvider<N> {
-    fn storage(&mut self) -> NonNull<[u8]> {
-        self.buf.as_mut_slice().into()
+    fn storage(&self) -> NonNull<[u8]> {
+        NonNull::new(self.buf.get()).unwrap()
     }
 }
 
@@ -46,7 +58,7 @@ impl<'a> SliceBufferProvider<'a> {
 }
 
 impl StorageProvider for SliceBufferProvider<'_> {
-    fn storage(&mut self) -> NonNull<[u8]> {
+    fn storage(&self) -> NonNull<[u8]> {
         self.nn
     }
 }

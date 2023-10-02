@@ -14,7 +14,7 @@ mod tests {
 
     #[test]
     fn deref_deref_mut() {
-        let mut bb: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+        let bb: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
         let (mut prod, mut cons) = bb.try_split().unwrap();
 
         let mut wgr = prod.grant_exact(1).unwrap();
@@ -121,7 +121,7 @@ mod tests {
     #[test]
     fn direct_usage_sanity() {
         // Initialize
-        let mut bb: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+        let bb: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
         let (mut prod, mut cons) = bb.try_split().unwrap();
         assert_eq!(cons.read(), Err(BBQError::InsufficientSize));
 
@@ -206,7 +206,7 @@ mod tests {
 
     #[test]
     fn zero_sized_grant() {
-        let mut bb: BBQueue<StaticBufferProvider<1000>> = BBQueue::new_static();
+        let bb: BBQueue<StaticBufferProvider<1000>> = BBQueue::new_static();
         let (mut prod, mut _cons) = bb.try_split().unwrap();
 
         let size = 1000;
@@ -219,7 +219,7 @@ mod tests {
 
     #[test]
     fn frame_sanity() {
-        let mut bb: BBQueue<StaticBufferProvider<1000>> = BBQueue::new_static();
+        let bb: BBQueue<StaticBufferProvider<1000>> = BBQueue::new_static();
         let (mut prod, mut cons) = bb.try_split_framed().unwrap();
 
         // One frame in, one frame out
@@ -266,7 +266,7 @@ mod tests {
 
     #[test]
     fn frame_wrap() {
-        let mut bb: BBQueue<StaticBufferProvider<22>> = BBQueue::new_static();
+        let bb: BBQueue<StaticBufferProvider<22>> = BBQueue::new_static();
         let (mut prod, mut cons) = bb.try_split_framed().unwrap();
 
         // 10 + 1 used
@@ -332,7 +332,7 @@ mod tests {
 
     #[test]
     fn frame_big_little() {
-        let mut bb: BBQueue<StaticBufferProvider<65536>> = BBQueue::new_static();
+        let bb: BBQueue<StaticBufferProvider<65536>> = BBQueue::new_static();
         let (mut prod, mut cons) = bb.try_split_framed().unwrap();
 
         // Create a frame that should take 3 bytes for the header
@@ -356,7 +356,7 @@ mod tests {
 
     #[test]
     fn split_sanity_check() {
-        let mut bb: BBQueue<StaticBufferProvider<10>> = BBQueue::new_static();
+        let bb: BBQueue<StaticBufferProvider<10>> = BBQueue::new_static();
         let (mut prod, mut cons) = bb.try_split().unwrap();
 
         // Fill buffer
@@ -425,7 +425,7 @@ mod tests {
 
     #[test]
     fn split_read_sanity_check() {
-        let mut bb: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+        let bb: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
         let (mut prod, mut cons) = bb.try_split().unwrap();
 
         const ITERS: usize = 100000;

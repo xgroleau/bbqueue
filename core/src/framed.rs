@@ -13,7 +13,7 @@
 //! # fn bbqtest() {
 //! use bbqueue::{BBQueue, StaticBufferProvider};
 //!
-//! let mut bb: BBQueue<StaticBufferProvider<1000>> = BBQueue::new_static();
+//! let bb: BBQueue<StaticBufferProvider<1000>> = BBQueue::new_static();
 //! let (mut prod, mut cons) = bb.try_split_framed().unwrap();
 //!
 //! // One frame in, one frame out

@@ -23,7 +23,7 @@
 //! # use bbqueue::{BBQueue, StaticBufferProvider};
 //! #
 //! // Create a buffer with six elements
-//! let mut bb: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+//! let bb: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
 //! let (mut prod, mut cons) = bb.try_split().unwrap();
 //!
 //! // Request space for one byte
