@@ -60,8 +60,8 @@ mod tests {
         // Check we can make multiple static items...
         let mut buf1 = [0; 6];
         let mut buf2 = [0; 6];
-        let mut bqq1 = BBQueue::new_from_slice(&mut buf1);
-        let mut bbq2 = BBQueue::new_from_slice(&mut buf2);
+        let bqq1 = BBQueue::new_from_slice(&mut buf1);
+        let bbq2 = BBQueue::new_from_slice(&mut buf2);
         let (mut prod1, mut cons1) = bqq1.try_split().unwrap();
         let (mut _prod2, mut cons2) = bbq2.try_split().unwrap();
 

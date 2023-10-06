@@ -264,7 +264,7 @@ where
     ///    let (prod, cons) = buf.try_split().unwrap();
     /// }
     /// ```
-    pub fn new(mut buf: B) -> Self {
+    pub fn new(buf: B) -> Self {
         Self {
             capacity: unsafe { buf.storage().as_ref().len() },
 
