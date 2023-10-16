@@ -10,11 +10,11 @@ mod single_thread;
 
 #[cfg(test)]
 mod tests {
-    use bbqueue::{BBQueue, Error as BBQError, StaticBufferProvider};
+    use bbqueue::{BBQueue, Error as BBQError, StaticStorageProvider};
 
     #[test]
     fn deref_deref_mut() {
-        let bb: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+        let bb: BBQueue<StaticStorageProvider<6>> = BBQueue::new_static();
         let (mut prod, mut cons) = bb.try_split().unwrap();
 
         let mut wgr = prod.grant_exact(1).unwrap();
@@ -37,8 +37,8 @@ mod tests {
     #[test]
     fn static_allocator() {
         // Check we can make multiple static items...
-        static mut BBQ1: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
-        static mut BBQ2: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+        static mut BBQ1: BBQueue<StaticStorageProvider<6>> = BBQueue::new_static();
+        static mut BBQ2: BBQueue<StaticStorageProvider<6>> = BBQueue::new_static();
         let (mut prod1, mut cons1) = unsafe { BBQ1.try_split().unwrap() };
         let (mut _prod2, mut cons2) = unsafe { BBQ2.try_split().unwrap() };
 
@@ -81,8 +81,8 @@ mod tests {
     #[test]
     fn release() {
         // Check we can make multiple static items...
-        static mut BBQ1: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
-        static mut BBQ2: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+        static mut BBQ1: BBQueue<StaticStorageProvider<6>> = BBQueue::new_static();
+        static mut BBQ2: BBQueue<StaticStorageProvider<6>> = BBQueue::new_static();
         unsafe {
             let (prod1, cons1) = BBQ1.try_split().unwrap();
             let (prod2, cons2) = BBQ2.try_split().unwrap();
@@ -121,7 +121,7 @@ mod tests {
     #[test]
     fn direct_usage_sanity() {
         // Initialize
-        let bb: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+        let bb: BBQueue<StaticStorageProvider<6>> = BBQueue::new_static();
         let (mut prod, mut cons) = bb.try_split().unwrap();
         assert_eq!(cons.read(), Err(BBQError::InsufficientSize));
 
@@ -206,7 +206,7 @@ mod tests {
 
     #[test]
     fn zero_sized_grant() {
-        let bb: BBQueue<StaticBufferProvider<1000>> = BBQueue::new_static();
+        let bb: BBQueue<StaticStorageProvider<1000>> = BBQueue::new_static();
         let (mut prod, mut _cons) = bb.try_split().unwrap();
 
         let size = 1000;
@@ -219,7 +219,7 @@ mod tests {
 
     #[test]
     fn frame_sanity() {
-        let bb: BBQueue<StaticBufferProvider<1000>> = BBQueue::new_static();
+        let bb: BBQueue<StaticStorageProvider<1000>> = BBQueue::new_static();
         let (mut prod, mut cons) = bb.try_split_framed().unwrap();
 
         // One frame in, one frame out
@@ -266,7 +266,7 @@ mod tests {
 
     #[test]
     fn frame_wrap() {
-        let bb: BBQueue<StaticBufferProvider<22>> = BBQueue::new_static();
+        let bb: BBQueue<StaticStorageProvider<22>> = BBQueue::new_static();
         let (mut prod, mut cons) = bb.try_split_framed().unwrap();
 
         // 10 + 1 used
@@ -332,7 +332,7 @@ mod tests {
 
     #[test]
     fn frame_big_little() {
-        let bb: BBQueue<StaticBufferProvider<65536>> = BBQueue::new_static();
+        let bb: BBQueue<StaticStorageProvider<65536>> = BBQueue::new_static();
         let (mut prod, mut cons) = bb.try_split_framed().unwrap();
 
         // Create a frame that should take 3 bytes for the header
@@ -356,7 +356,7 @@ mod tests {
 
     #[test]
     fn split_sanity_check() {
-        let bb: BBQueue<StaticBufferProvider<10>> = BBQueue::new_static();
+        let bb: BBQueue<StaticStorageProvider<10>> = BBQueue::new_static();
         let (mut prod, mut cons) = bb.try_split().unwrap();
 
         // Fill buffer
@@ -425,7 +425,7 @@ mod tests {
 
     #[test]
     fn split_read_sanity_check() {
-        let bb: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+        let bb: BBQueue<StaticStorageProvider<6>> = BBQueue::new_static();
         let (mut prod, mut cons) = bb.try_split().unwrap();
 
         const ITERS: usize = 100000;

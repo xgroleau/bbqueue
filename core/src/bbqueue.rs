@@ -2,7 +2,7 @@ use atomic_waker::AtomicWaker;
 
 use crate::{
     framed::{FrameConsumer, FrameProducer},
-    Error, Result, SliceBufferProvider, StaticBufferProvider, StorageProvider,
+    Error, Result, SliceStorageProvider, StaticStorageProvider, StorageProvider,
 };
 use core::{
     cell::UnsafeCell,
@@ -311,7 +311,7 @@ where
     }
 }
 
-impl<const N: usize> BBQueue<StaticBufferProvider<N>> {
+impl<const N: usize> BBQueue<StaticStorageProvider<N>> {
     /// Create a new constant static BBQ, using staic memory allocation
     /// ```rust,no_run
     /// use bbqueue::{BBQueue, StaticBufferProvider};
@@ -327,7 +327,7 @@ impl<const N: usize> BBQueue<StaticBufferProvider<N>> {
             capacity: N,
 
             // This will not be initialized until we split the buffer
-            buf: UnsafeCell::new(StaticBufferProvider::new()),
+            buf: UnsafeCell::new(StaticStorageProvider::new()),
 
             // Owned by the writer
             write: AtomicUsize::new(0),
@@ -369,7 +369,7 @@ impl<const N: usize> BBQueue<StaticBufferProvider<N>> {
     }
 }
 
-impl<'a> BBQueue<SliceBufferProvider<'a>> {
+impl<'a> BBQueue<SliceStorageProvider<'a>> {
     /// Create a new BBQueue using userspace provided memory in the form of a slice.
     /// ```rust,no_run
     /// use bbqueue::{BBQueue, StaticBufferProvider};
@@ -381,7 +381,7 @@ impl<'a> BBQueue<SliceBufferProvider<'a>> {
     /// }
     /// ```
     pub fn new_from_slice(buf: &'a mut [u8]) -> Self {
-        Self::new(SliceBufferProvider::new(buf))
+        Self::new(SliceStorageProvider::new(buf))
     }
 }
 

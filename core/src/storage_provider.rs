@@ -11,11 +11,11 @@ pub trait StorageProvider: PartialEq {
 
 /// A statically allocated buffer
 #[derive(Debug)]
-pub struct StaticBufferProvider<const N: usize> {
+pub struct StaticStorageProvider<const N: usize> {
     buf: UnsafeCell<[u8; N]>,
 }
 
-impl<const N: usize> PartialEq for StaticBufferProvider<N> {
+impl<const N: usize> PartialEq for StaticStorageProvider<N> {
     fn eq(&self, other: &Self) -> bool {
         unsafe {
             let r = &*self.buf.get();
@@ -25,7 +25,7 @@ impl<const N: usize> PartialEq for StaticBufferProvider<N> {
     }
 }
 
-impl<const N: usize> StaticBufferProvider<N> {
+impl<const N: usize> StaticStorageProvider<N> {
     /// A buffer with internal allocation
     pub const fn new() -> Self {
         Self {
@@ -34,7 +34,7 @@ impl<const N: usize> StaticBufferProvider<N> {
     }
 }
 
-impl<const N: usize> StorageProvider for StaticBufferProvider<N> {
+impl<const N: usize> StorageProvider for StaticStorageProvider<N> {
     fn storage(&self) -> NonNull<[u8]> {
         NonNull::new(self.buf.get()).unwrap()
     }
@@ -42,12 +42,12 @@ impl<const N: usize> StorageProvider for StaticBufferProvider<N> {
 
 /// A buffer allocated from userspace
 #[derive(Debug, PartialEq)]
-pub struct SliceBufferProvider<'a> {
+pub struct SliceStorageProvider<'a> {
     nn: NonNull<[u8]>,
     phantom: PhantomData<&'a mut [u8]>,
 }
 
-impl<'a> SliceBufferProvider<'a> {
+impl<'a> SliceStorageProvider<'a> {
     /// Creates a new BufferProvided from a userspace memory
     pub fn new(buf: &'a mut [u8]) -> Self {
         Self {
@@ -57,7 +57,7 @@ impl<'a> SliceBufferProvider<'a> {
     }
 }
 
-impl StorageProvider for SliceBufferProvider<'_> {
+impl StorageProvider for SliceStorageProvider<'_> {
     fn storage(&self) -> NonNull<[u8]> {
         self.nn
     }

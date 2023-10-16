@@ -1,10 +1,10 @@
 #[cfg(test)]
 mod tests {
-    use bbqueue::{BBQueue, StaticBufferProvider};
+    use bbqueue::{BBQueue, StaticStorageProvider};
 
     #[test]
     fn sanity_check() {
-        let bb: BBQueue<StaticBufferProvider<6>> = BBQueue::new_static();
+        let bb: BBQueue<StaticStorageProvider<6>> = BBQueue::new_static();
         let (mut prod, mut cons) = bb.try_split().unwrap();
 
         const ITERS: usize = 100000;

@@ -2,7 +2,7 @@
 mod tests {
 
     use bbqueue::{
-        BBQueue, Consumer, GrantR, GrantW, Producer, StaticBufferProvider, StorageProvider,
+        BBQueue, Consumer, GrantR, GrantW, Producer, StaticStorageProvider, StorageProvider,
     };
 
     enum Potato<'a, B>
@@ -84,7 +84,7 @@ mod tests {
         }
     }
 
-    static mut BB: BBQueue<StaticBufferProvider<BUFFER_SIZE>> = BBQueue::new_static();
+    static mut BB: BBQueue<StaticStorageProvider<BUFFER_SIZE>> = BBQueue::new_static();
 
     use std::sync::mpsc::{channel, Receiver, Sender};
     use std::thread::spawn;
@@ -95,20 +95,20 @@ mod tests {
 
         // create the channels
         let (tx_1_2, rx_1_2): (
-            Sender<Potato<'static, StaticBufferProvider<BUFFER_SIZE>>>,
-            Receiver<Potato<'static, StaticBufferProvider<BUFFER_SIZE>>>,
+            Sender<Potato<'static, StaticStorageProvider<BUFFER_SIZE>>>,
+            Receiver<Potato<'static, StaticStorageProvider<BUFFER_SIZE>>>,
         ) = channel();
         let (tx_2_3, rx_2_3): (
-            Sender<Potato<'static, StaticBufferProvider<BUFFER_SIZE>>>,
-            Receiver<Potato<'static, StaticBufferProvider<BUFFER_SIZE>>>,
+            Sender<Potato<'static, StaticStorageProvider<BUFFER_SIZE>>>,
+            Receiver<Potato<'static, StaticStorageProvider<BUFFER_SIZE>>>,
         ) = channel();
         let (tx_3_4, rx_3_4): (
-            Sender<Potato<'static, StaticBufferProvider<BUFFER_SIZE>>>,
-            Receiver<Potato<'static, StaticBufferProvider<BUFFER_SIZE>>>,
+            Sender<Potato<'static, StaticStorageProvider<BUFFER_SIZE>>>,
+            Receiver<Potato<'static, StaticStorageProvider<BUFFER_SIZE>>>,
         ) = channel();
         let (tx_4_1, rx_4_1): (
-            Sender<Potato<'static, StaticBufferProvider<BUFFER_SIZE>>>,
-            Receiver<Potato<'static, StaticBufferProvider<BUFFER_SIZE>>>,
+            Sender<Potato<'static, StaticStorageProvider<BUFFER_SIZE>>>,
+            Receiver<Potato<'static, StaticStorageProvider<BUFFER_SIZE>>>,
         ) = channel();
 
         tx_1_2.send(Potato::Tx((prod, 3))).unwrap();
@@ -116,7 +116,7 @@ mod tests {
 
         let thread_1 = spawn(move || {
             let mut count = TOTAL_RINGS;
-            let mut me: Potato<'static, StaticBufferProvider<BUFFER_SIZE>> = Potato::Idle;
+            let mut me: Potato<'static, StaticStorageProvider<BUFFER_SIZE>> = Potato::Idle;
 
             loop {
                 if let Potato::Idle = me {
@@ -168,9 +168,9 @@ mod tests {
         });
 
         let closure_2_3_4 =
-            move |rx: Receiver<Potato<'static, StaticBufferProvider<BUFFER_SIZE>>>,
-                  tx: Sender<Potato<'static, StaticBufferProvider<BUFFER_SIZE>>>| {
-                let mut me: Potato<'static, StaticBufferProvider<BUFFER_SIZE>> = Potato::Idle;
+            move |rx: Receiver<Potato<'static, StaticStorageProvider<BUFFER_SIZE>>>,
+                  tx: Sender<Potato<'static, StaticStorageProvider<BUFFER_SIZE>>>| {
+                let mut me: Potato<'static, StaticStorageProvider<BUFFER_SIZE>> = Potato::Idle;
                 let mut count = 0;
 
                 loop {

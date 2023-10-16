@@ -1,13 +1,13 @@
 #[cfg(test)]
 mod tests {
 
-    use bbqueue::{BBQueue, StaticBufferProvider};
+    use bbqueue::{BBQueue, StaticStorageProvider};
     use futures::executor::block_on;
 
     #[test]
     fn frame_wrong_size() {
         block_on(async {
-            let bb: BBQueue<StaticBufferProvider<256>> = BBQueue::new_static();
+            let bb: BBQueue<StaticStorageProvider<256>> = BBQueue::new_static();
             let (mut prod, mut cons) = bb.try_split_framed().unwrap();
 
             // Create largeish grants
@@ -30,7 +30,7 @@ mod tests {
     #[test]
     fn full_size() {
         block_on(async {
-            let bb: BBQueue<StaticBufferProvider<256>> = BBQueue::new_static();
+            let bb: BBQueue<StaticStorageProvider<256>> = BBQueue::new_static();
             let (mut prod, mut cons) = bb.try_split_framed().unwrap();
             let mut ctr = 0;
 
@@ -73,7 +73,7 @@ mod tests {
     #[test]
     fn frame_overcommit() {
         block_on(async {
-            let bb: BBQueue<StaticBufferProvider<256>> = BBQueue::new_static();
+            let bb: BBQueue<StaticStorageProvider<256>> = BBQueue::new_static();
             let (mut prod, mut cons) = bb.try_split_framed().unwrap();
 
             // Create largeish grants
@@ -102,7 +102,7 @@ mod tests {
     #[test]
     fn frame_undercommit() {
         block_on(async {
-            let bb: BBQueue<StaticBufferProvider<512>> = BBQueue::new_static();
+            let bb: BBQueue<StaticStorageProvider<512>> = BBQueue::new_static();
             let (mut prod, mut cons) = bb.try_split_framed().unwrap();
 
             for _ in 0..100 {
@@ -143,7 +143,7 @@ mod tests {
     #[test]
     fn frame_auto_commit_release() {
         block_on(async {
-            let bb: BBQueue<StaticBufferProvider<256>> = BBQueue::new_static();
+            let bb: BBQueue<StaticStorageProvider<256>> = BBQueue::new_static();
             let (mut prod, mut cons) = bb.try_split_framed().unwrap();
 
             for _ in 0..100 {
